@@ -32,7 +32,7 @@ use std::path::PathBuf;
 use crate::data_dir::DataDir;
 use crate::db::migrations::migrate;
 use crate::prelude::*;
-use crate::resources::*;
+use crate::resources::{hello_world, upload_mod_archive, upload_wabbajack_file};
 use crate::web::details_page::details_page;
 use crate::web::listing_page::listing_page;
 use wabba_server::serve_static_file;
