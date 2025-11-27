@@ -118,6 +118,16 @@ impl ModArchive {
         Ok(())
     }
 
+    pub fn mark_available(
+        &self,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<(), rusqlite::Error> {
+        conn.prepare("UPDATE mod_archive SET available = TRUE WHERE id = ?1")?
+            .execute(params![self.id])?;
+
+        Ok(())
+    }
+
     pub fn associate(
         &self,
         wabbajack_archive: &WabbajackArchive,

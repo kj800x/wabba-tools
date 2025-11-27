@@ -13,6 +13,7 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::data_dir::DataDir;
+use crate::db::mod_archive::ModArchive;
 use crate::db::mod_archive::ModArchiveEgg;
 use crate::db::wabbajack_archive::WabbajackArchive;
 use crate::db::wabbajack_archive::WabbajackArchiveEgg;
@@ -176,11 +177,73 @@ pub async fn upload_mod_archive(
     filename: web::Path<String>,
     pool: web::Data<Pool<SqliteConnectionManager>>,
     data_dir: web::Data<DataDir>,
+    req: HttpRequest,
     mut body: web::Payload,
 ) -> Result<HttpResponse, actix_web::Error> {
+    let headers = req.headers();
+    let pool = pool.into_inner().get().unwrap();
     let filename = filename.into_inner();
     let data_dir = data_dir.into_inner();
     let path = data_dir.get_mod_archive_path(&filename);
+
+    log::info!("Request to upload mod archive file {}", filename);
+
+    let if_none_match = headers
+        .get("If-None-Match")
+        .map(|x| x.to_str().unwrap_or(""));
+
+    match if_none_match {
+        Some(if_none_match) => {
+            if let Some(stored_archive) = ModArchive::get_by_hash(if_none_match, &pool)
+                .unwrap()
+                .filter(|x| x.available)
+            {
+                if stored_archive.filename == filename {
+                    return Ok(HttpResponse::NotModified().finish());
+                } else {
+                    return Err(actix_web::error::ErrorBadRequest(
+                        "Content hash already stored in db under a different filename",
+                    ));
+                }
+            }
+
+            if let Some(stored_archive) = ModArchive::get_by_filename(&filename, &pool)
+                .unwrap()
+                .filter(|x| x.available)
+            {
+                if stored_archive.xxhash64 == if_none_match {
+                    return Ok(HttpResponse::NotModified().finish());
+                } else {
+                    return Err(actix_web::error::ErrorBadRequest(
+                        "File already exists in db with different hash",
+                    ));
+                }
+            }
+
+            if path.exists() {
+                let existing_hash = Hash::compute(&std::fs::read(&path).unwrap());
+                if if_none_match == existing_hash {
+                    log::warn!(
+                        "User tried to upload a file which already existed on disk and matched the hash supplied, but it was not in the db"
+                    );
+                    return Ok(HttpResponse::NotModified().finish());
+                } else {
+                    return Err(actix_web::error::ErrorBadRequest(
+                        "File already exists on disk (but not db) and does not match the hash supplied",
+                    ));
+                }
+            }
+        }
+
+        None => {
+            if path.exists() {
+                return Err(actix_web::error::ErrorBadRequest(
+                    "File already exists on disk (but not db) and you did not supply a hash",
+                ));
+            }
+        }
+    }
+
     let file = File::create(&path)
         .await
         .map_err(actix_web::error::ErrorInternalServerError)?;
@@ -209,6 +272,34 @@ pub async fn upload_mod_archive(
     }
 
     log::info!("Uploaded mod archive file {}", filename);
+
+    writer
+        .flush()
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    let hash = Hash::compute(&std::fs::read(&path).unwrap());
+
+    match ModArchive::get_by_hash(&hash, &pool).unwrap() {
+        Some(stored_archive) => {
+            log::info!("Mod archive present in db, marking as available");
+            stored_archive.mark_available(&pool).unwrap();
+        }
+
+        None => {
+            log::info!("Mod archive not found in db, creating new one");
+            let mod_archive = ModArchiveEgg {
+                filename: filename,
+                name: None,
+                version: None,
+                xxhash64: hash,
+                size: std::fs::metadata(&path).unwrap().len() as u64,
+                available: true,
+            };
+
+            mod_archive.create(&pool).unwrap();
+        }
+    }
 
     Ok(HttpResponse::Ok().body("ok"))
 }
