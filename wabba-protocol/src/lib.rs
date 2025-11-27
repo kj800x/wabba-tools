@@ -1,6 +1,7 @@
 // Protocol definitions for Wabba communication
 
 pub mod archive_state;
+pub mod hash;
 pub mod wabbajack;
 
 pub mod protocol {

@@ -24,4 +24,11 @@ pub enum Commands {
         #[arg(value_name = "DOWNLOAD_DIRS")]
         download_dirs: Vec<PathBuf>,
     },
+
+    /// Hash a file using xxhash64
+    Hash {
+        /// Path to the file to hash
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+    },
 }

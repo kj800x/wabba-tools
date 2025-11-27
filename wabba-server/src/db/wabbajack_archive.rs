@@ -9,6 +9,7 @@ pub struct WabbajackArchive {
     pub filename: String,
     pub name: String,
     pub version: String,
+    pub size: u64,
     pub xxhash64: String,
     pub available: bool,
 }
@@ -18,6 +19,7 @@ pub struct WabbajackArchiveEgg {
     pub filename: String,
     pub name: String,
     pub version: String,
+    pub size: u64,
     pub xxhash64: String,
     pub available: bool,
 }
@@ -29,8 +31,9 @@ impl WabbajackArchive {
             filename: row.get(1)?,
             name: row.get(2)?,
             version: row.get(3)?,
-            xxhash64: row.get(4)?,
-            available: row.get(5)?,
+            size: row.get(4)?,
+            xxhash64: row.get(5)?,
+            available: row.get(6)?,
         })
     }
 
@@ -38,7 +41,7 @@ impl WabbajackArchive {
         filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, xxhash64, available FROM mod_archive WHERE filename = ?1")?
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM wabbajack_archive WHERE filename = ?1")?
         .query_row(params![filename], |row| {
           Ok(WabbajackArchive::from_row(row))
         })
@@ -52,7 +55,7 @@ impl WabbajackArchive {
         hash: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, xxhash64, available FROM mod_archive WHERE xxhash64 = ?1")?
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM wabbajack_archive WHERE xxhash64 = ?1")?
       .query_row(params![hash], |row| {
         Ok(WabbajackArchive::from_row(row))
       })
@@ -63,12 +66,37 @@ impl WabbajackArchive {
         Ok(archive)
     }
 
+    pub fn get_by_id(
+        id: u64,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Option<Self>, rusqlite::Error> {
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM wabbajack_archive WHERE id = ?1")?
+            .query_row(params![id], |row| {
+                Ok(WabbajackArchive::from_row(row))
+            })
+            .optional()?
+            .transpose()?;
+
+        Ok(archive)
+    }
+
+    pub fn get_all(
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Vec<Self>, rusqlite::Error> {
+        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM wabbajack_archive ORDER BY name")?;
+        let archives = stmt
+            .query_map([], |row| Ok(WabbajackArchive::from_row(row)?))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(archives)
+    }
+
     pub fn update(
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<(), rusqlite::Error> {
-        conn.prepare("INSERT OR REPLACE INTO mod_archive (id, filename, name, version, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?
-        .execute(params![self.id, self.filename, self.name, self.version, self.xxhash64, self.available])?;
+        conn.prepare("INSERT OR REPLACE INTO wabbajack_archive (id, filename, name, version, size, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?
+        .execute(params![self.id, self.filename, self.name, self.version, self.size, self.xxhash64, self.available])?;
 
         Ok(())
     }
@@ -79,14 +107,15 @@ impl WabbajackArchiveEgg {
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<WabbajackArchive, rusqlite::Error> {
-        conn.prepare("INSERT INTO wabbajack_archive (filename, name, version, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5)")?
-          .execute(params![self.filename, self.name, self.version, self.xxhash64, self.available])?;
+        conn.prepare("INSERT INTO wabbajack_archive (filename, name, version, size, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?
+          .execute(params![self.filename, self.name, self.version, self.size, self.xxhash64, self.available])?;
 
         Ok(WabbajackArchive {
             id: conn.last_insert_rowid() as u64,
             filename: self.filename.clone(),
             name: self.name.clone(),
             version: self.version.clone(),
+            size: self.size,
             xxhash64: self.xxhash64.clone(),
             available: self.available,
         })

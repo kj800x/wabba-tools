@@ -25,14 +25,16 @@ pub mod prelude {
 
 mod data_dir;
 mod db;
-mod hash;
 mod resources;
+mod web;
 use std::path::PathBuf;
 
 use crate::data_dir::DataDir;
 use crate::db::migrations::migrate;
 use crate::prelude::*;
 use crate::resources::*;
+use crate::web::details_page::details_page;
+use crate::web::listing_page::listing_page;
 use wabba_server::serve_static_file;
 
 async fn start_http(
@@ -51,9 +53,11 @@ async fn start_http(
             .app_data(Data::new(pool.clone()))
             .app_data(Data::new(data_dir.clone()))
             .wrap(middleware::Logger::default())
-            .service(root)
+            .service(hello_world)
             .service(upload_wabbajack_file)
             .service(upload_mod_archive)
+            .service(listing_page)
+            .service(details_page)
             .service(serve_static_file!("htmx.min.js"))
             .service(serve_static_file!("idiomorph.min.js"))
             .service(serve_static_file!("idiomorph-ext.min.js"))

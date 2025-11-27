@@ -3,7 +3,7 @@ use clap::Parser;
 mod cli;
 mod download_dir;
 use env_logger::Builder;
-use wabba_protocol::wabbajack::WabbajackMetadata;
+use wabba_protocol::{hash::Hash, wabbajack::WabbajackMetadata};
 
 #[derive(Debug)]
 struct FileComparisonResult {
@@ -82,6 +82,10 @@ fn main() {
             let result = compare_file_lists(&required_files, &download_directory.files());
 
             log::info!("Missing files: {:#?}", result.missing_files);
+        }
+        cli::Commands::Hash { file } => {
+            let hash = Hash::compute(&std::fs::read(file).expect("Failed to read file"));
+            log::info!("Hash: {}", hash);
         }
     }
 

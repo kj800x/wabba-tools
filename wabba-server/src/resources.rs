@@ -3,6 +3,7 @@ use std::time::SystemTime;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufWriter;
+use wabba_protocol::hash::Hash;
 use wabba_protocol::wabbajack::WabbajackMetadata;
 
 use actix_web::{HttpResponse, Responder, get, post, web};
@@ -15,10 +16,9 @@ use crate::data_dir::DataDir;
 use crate::db::mod_archive::ModArchiveEgg;
 use crate::db::wabbajack_archive::WabbajackArchive;
 use crate::db::wabbajack_archive::WabbajackArchiveEgg;
-use crate::hash::Hash;
 
-#[get("/")]
-pub async fn root() -> impl Responder {
+#[get("/hello")]
+pub async fn hello_world() -> impl Responder {
     html! {
         div {
           "Hello, world!"
@@ -139,6 +139,7 @@ pub async fn upload_wabbajack_file(
         name: metadata.name.clone(),
         version: metadata.version.clone(),
         xxhash64: hash.clone(),
+        size: std::fs::metadata(&path).unwrap().len() as u64,
         available: true,
     };
 
@@ -155,10 +156,14 @@ pub async fn upload_wabbajack_file(
             name: archive.name(),
             version: archive.version(),
             xxhash64: archive.hash.clone(),
+            size: archive.size,
             available: false,
         };
 
         let created_mod_archive = mod_archive.create(&pool).unwrap();
+        created_mod_archive
+            .associate(&created_wabbajack_archive, &pool)
+            .unwrap();
 
         log::info!("created_mod_archive: {:#?}", created_mod_archive);
     }
