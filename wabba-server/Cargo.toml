@@ -1,0 +1,38 @@
+[package]
+name = "wabba-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wabba-protocol = { path = "../wabba-protocol" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_variant = "0.1.3"
+
+indoc = "2"
+env_logger = "0.10"
+futures-util = { version = "0.3.17", default-features = false, features = [
+  "std",
+] }
+actix-web = "4"
+r2d2 = "0.8"
+r2d2_sqlite = "0.24"
+rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite_migration = "1.2.0"
+log = "0.4"
+actix-session = { version = "0.8.0", features = ["cookie-session"] }
+pwhash = "1"
+url = "2.5.0"
+tokio = { version = "1.37.0", features = [
+  "io-std",
+  "macros",
+  "rt-multi-thread",
+  "fs",
+] }
+chrono = "0.4.38"
+chrono-tz = "0.10.3"
+regex = "1.10.4"
+maud = { version = "0.26.0", features = ["actix-web"] }
+md5 = "0.7"
+itertools = "0.14.0"
+sha2 = "0.10.9"
