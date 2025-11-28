@@ -3,7 +3,7 @@ use maud::html;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
-use crate::db::wabbajack_archive::WabbajackArchive;
+use crate::db::modlist::Modlist;
 
 fn format_size(bytes: u64) -> String {
     const KB: u64 = 1024;
@@ -36,8 +36,7 @@ pub async fn listing_page(
     let conn = pool
         .get()
         .map_err(actix_web::error::ErrorInternalServerError)?;
-    let archives =
-        WabbajackArchive::get_all(&conn).map_err(actix_web::error::ErrorInternalServerError)?;
+    let modlists = Modlist::get_all(&conn).map_err(actix_web::error::ErrorInternalServerError)?;
 
     let page = html! {
         (maud::DOCTYPE)
@@ -51,7 +50,7 @@ pub async fn listing_page(
             body.page-listing {
                 div.container {
                     h1 { "Wabbajack Modlists" }
-                    @if archives.is_empty() {
+                    @if modlists.is_empty() {
                         p.empty-state { "No modlists found." }
                     } @else {
                         table.modlist-table {
@@ -66,21 +65,21 @@ pub async fn listing_page(
                                 }
                             }
                             tbody {
-                                @for archive in &archives {
+                                @for modlist in &modlists {
                                     tr {
                                         td.name {
-                                            a href={"/modlists/" (archive.id)} {
-                                                (archive.name)
+                                            a href={"/modlists/" (modlist.id)} {
+                                                (modlist.name)
                                             }
                                         }
-                                        td.version { (archive.version) }
-                                        td.filename { (archive.filename) }
-                                        td.size { (format_size(archive.size)) }
+                                        td.version { (modlist.version) }
+                                        td.filename { (modlist.filename) }
+                                        td.size { (format_size(modlist.size)) }
                                         td.hash {
-                                            code { (format_hash(&archive.xxhash64)) }
+                                            code { (format_hash(&modlist.xxhash64)) }
                                         }
                                         td.status {
-                                            @if archive.available {
+                                            @if modlist.available {
                                                 span.status-badge.available { "Available" }
                                             } @else {
                                                 span.status-badge.unavailable { "Unavailable" }

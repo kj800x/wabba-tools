@@ -3,8 +3,8 @@ use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 use std::path::Path;
 
-use crate::db::mod_archive::ModArchive;
-use crate::db::wabbajack_archive::WabbajackArchive;
+use crate::db::mod_data::Mod;
+use crate::db::modlist::Modlist;
 
 #[derive(Debug)]
 pub enum UploadValidationResult {
@@ -29,19 +29,19 @@ pub trait ArchiveType: Clone {
     fn available(&self) -> bool;
 }
 
-impl ArchiveType for ModArchive {
+impl ArchiveType for Mod {
     fn get_by_hash(
         hash: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        ModArchive::get_by_hash(hash, conn)
+        Mod::get_by_hash(hash, conn)
     }
 
     fn get_by_filename(
         filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        ModArchive::get_by_filename(filename, conn)
+        Mod::get_by_filename(filename, conn)
     }
 
     fn filename(&self) -> &str {
@@ -57,19 +57,19 @@ impl ArchiveType for ModArchive {
     }
 }
 
-impl ArchiveType for WabbajackArchive {
+impl ArchiveType for Modlist {
     fn get_by_hash(
         hash: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        WabbajackArchive::get_by_hash(hash, conn)
+        Modlist::get_by_hash(hash, conn)
     }
 
     fn get_by_filename(
         filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        WabbajackArchive::get_by_filename(filename, conn)
+        Modlist::get_by_filename(filename, conn)
     }
 
     fn filename(&self) -> &str {

@@ -3,8 +3,8 @@ use maud::html;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
-use crate::db::mod_archive::ModArchive;
-use crate::db::wabbajack_archive::WabbajackArchive;
+use crate::db::mod_data::Mod;
+use crate::db::modlist::Modlist;
 
 fn format_size(bytes: u64) -> String {
     const KB: u64 = 1024;
@@ -40,12 +40,12 @@ pub async fn details_page(
         .map_err(actix_web::error::ErrorInternalServerError)?;
     let archive_id = id.into_inner();
 
-    let archive = WabbajackArchive::get_by_id(archive_id, &conn)
+    let modlist = Modlist::get_by_id(archive_id, &conn)
         .map_err(actix_web::error::ErrorInternalServerError)?
         .ok_or_else(|| actix_web::error::ErrorNotFound("Modlist not found"))?;
 
-    // Get mod archives via association table
-    let mod_archives = ModArchive::get_by_wabbajack_archive_id(archive_id, &conn)
+    // Get mods via association table
+    let mods = Mod::get_by_modlist_id(archive_id, &conn)
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
     let page = html! {
@@ -54,27 +54,27 @@ pub async fn details_page(
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
-                title { (archive.name.clone()) " - Modlist Details" }
+                title { (modlist.name.clone()) " - Modlist Details" }
                 link rel="stylesheet" href="/res/styles.css";
             }
             body.page-details {
                 div.container {
                     div.header {
                         a.back-link href="/" { "← Back to Modlists" }
-                        h1 { (archive.name.clone()) }
+                        h1 { (modlist.name.clone()) }
                         div.metadata {
-                            p { strong { "Version: " } (archive.version.clone()) }
-                            p { strong { "Filename: " } (archive.filename.clone()) }
-                            p { strong { "Size: " } (format_size(archive.size)) }
-                            p { strong { "Hash: " } (format_hash(&archive.xxhash64)) }
+                            p { strong { "Version: " } (modlist.version.clone()) }
+                            p { strong { "Filename: " } (modlist.filename.clone()) }
+                            p { strong { "Size: " } (format_size(modlist.size)) }
+                            p { strong { "Hash: " } (format_hash(&modlist.xxhash64)) }
                         }
                     }
 
-                    h2 { "Required Mod Archives" }
-                    @if mod_archives.is_empty() {
-                        p.empty-state { "No mod archives found." }
+                    h2 { "Required Mods" }
+                    @if mods.is_empty() {
+                        p.empty-state { "No mods found." }
                     } @else {
-                        table.mod-archive-table {
+                        table.mod-table {
                             thead {
                                 tr {
                                     th { "Filename" }
@@ -86,31 +86,31 @@ pub async fn details_page(
                                 }
                             }
                             tbody {
-                                @for mod_archive in &mod_archives {
+                                @for mod_item in &mods {
                                     tr {
-                                        td.filename { (mod_archive.filename.clone()) }
+                                        td.filename { (mod_item.filename.clone()) }
                                         td.name {
-                                            @if let Some(ref name) = mod_archive.name {
+                                            @if let Some(ref name) = mod_item.name {
                                                 (name)
                                             } @else {
                                                 em { "Unknown" }
                                             }
                                         }
                                         td.version {
-                                            @if let Some(ref version) = mod_archive.version {
+                                            @if let Some(ref version) = mod_item.version {
                                                 (version)
                                             } @else {
                                                 em { "-" }
                                             }
                                         }
                                         td.size {
-                                            (format_size(mod_archive.size))
+                                            (format_size(mod_item.size))
                                         }
                                         td.hash {
-                                            code { (format_hash(&mod_archive.xxhash64)) }
+                                            code { (format_hash(&mod_item.xxhash64)) }
                                         }
                                         td.status {
-                                            @if mod_archive.available {
+                                            @if mod_item.available {
                                                 span.status-badge.available { "Available" }
                                             } @else {
                                                 span.status-badge.unavailable { "Unavailable" }

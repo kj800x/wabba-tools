@@ -4,7 +4,7 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct WabbajackArchive {
+pub struct Modlist {
     pub id: u64,
     pub filename: String,
     pub name: String,
@@ -15,7 +15,7 @@ pub struct WabbajackArchive {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct WabbajackArchiveEgg {
+pub struct ModlistEgg {
     pub filename: String,
     pub name: String,
     pub version: String,
@@ -24,9 +24,9 @@ pub struct WabbajackArchiveEgg {
     pub available: bool,
 }
 
-impl WabbajackArchive {
+impl Modlist {
     pub fn from_row(row: &rusqlite::Row) -> Result<Self, rusqlite::Error> {
-        Ok(WabbajackArchive {
+        Ok(Modlist {
             id: row.get(0)?,
             filename: row.get(1)?,
             name: row.get(2)?,
@@ -41,9 +41,9 @@ impl WabbajackArchive {
         filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM wabbajack_archive WHERE filename = ?1")?
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist WHERE filename = ?1")?
         .query_row(params![filename], |row| {
-          Ok(WabbajackArchive::from_row(row))
+          Ok(Modlist::from_row(row))
         })
         .optional()?
         .transpose()?;
@@ -55,9 +55,9 @@ impl WabbajackArchive {
         hash: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM wabbajack_archive WHERE xxhash64 = ?1")?
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist WHERE xxhash64 = ?1")?
       .query_row(params![hash], |row| {
-        Ok(WabbajackArchive::from_row(row))
+        Ok(Modlist::from_row(row))
       })
       .optional()?
 
@@ -70,9 +70,9 @@ impl WabbajackArchive {
         id: u64,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM wabbajack_archive WHERE id = ?1")?
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist WHERE id = ?1")?
             .query_row(params![id], |row| {
-                Ok(WabbajackArchive::from_row(row))
+                Ok(Modlist::from_row(row))
             })
             .optional()?
             .transpose()?;
@@ -83,9 +83,9 @@ impl WabbajackArchive {
     pub fn get_all(
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
-        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM wabbajack_archive ORDER BY name")?;
+        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist ORDER BY name")?;
         let archives = stmt
-            .query_map([], |row| Ok(WabbajackArchive::from_row(row)?))?
+            .query_map([], |row| Ok(Modlist::from_row(row)?))?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(archives)
@@ -95,22 +95,22 @@ impl WabbajackArchive {
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<(), rusqlite::Error> {
-        conn.prepare("INSERT OR REPLACE INTO wabbajack_archive (id, filename, name, version, size, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?
+        conn.prepare("INSERT OR REPLACE INTO modlist (id, filename, name, version, size, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?
         .execute(params![self.id, self.filename, self.name, self.version, self.size, self.xxhash64, self.available])?;
 
         Ok(())
     }
 }
 
-impl WabbajackArchiveEgg {
+impl ModlistEgg {
     pub fn create(
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
-    ) -> Result<WabbajackArchive, rusqlite::Error> {
-        conn.prepare("INSERT INTO wabbajack_archive (filename, name, version, size, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?
+    ) -> Result<Modlist, rusqlite::Error> {
+        conn.prepare("INSERT INTO modlist (filename, name, version, size, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?
           .execute(params![self.filename, self.name, self.version, self.size, self.xxhash64, self.available])?;
 
-        Ok(WabbajackArchive {
+        Ok(Modlist {
             id: conn.last_insert_rowid() as u64,
             filename: self.filename.clone(),
             name: self.name.clone(),
@@ -121,3 +121,4 @@ impl WabbajackArchiveEgg {
         })
     }
 }
+

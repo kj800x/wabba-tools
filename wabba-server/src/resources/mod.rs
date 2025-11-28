@@ -16,10 +16,10 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::data_dir::DataDir;
-use crate::db::mod_archive::ModArchive;
-use crate::db::mod_archive::ModArchiveEgg;
-use crate::db::wabbajack_archive::WabbajackArchive;
-use crate::db::wabbajack_archive::WabbajackArchiveEgg;
+use crate::db::mod_data::Mod;
+use crate::db::mod_data::ModEgg;
+use crate::db::modlist::Modlist;
+use crate::db::modlist::ModlistEgg;
 use crate::resources::upload_validation::{UploadValidationResult, validate_upload_request};
 
 /// Streams the upload payload to a file, with progress logging every 5 seconds.
@@ -76,8 +76,8 @@ pub async fn hello_world() -> impl Responder {
     }
 }
 
-#[post("/submit/wabbajack/{filename}")]
-pub async fn upload_wabbajack_file(
+#[post("/submit/modlist/{filename}")]
+pub async fn upload_modlist(
     filename: web::Path<String>,
     pool: web::Data<Pool<SqliteConnectionManager>>,
     data_dir: web::Data<DataDir>,
@@ -91,7 +91,7 @@ pub async fn upload_wabbajack_file(
 
     log::info!("Request to upload modlist file {}", filename);
 
-    if WabbajackArchive::get_by_filename(&filename, &pool)
+    if Modlist::get_by_filename(&filename, &pool)
         .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)))?
         .is_some_and(|x| !x.available)
     {
@@ -102,10 +102,10 @@ pub async fn upload_wabbajack_file(
     }
 
     // Validate the upload request
-    let validation_result = validate_upload_request::<WabbajackArchive>(
-        &req, &filename, &path, &pool,
-    )
-    .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)))?;
+    let validation_result = validate_upload_request::<Modlist>(&req, &filename, &path, &pool)
+        .map_err(|e| {
+            actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+        })?;
 
     match validation_result {
         UploadValidationResult::NotModified => {
@@ -163,13 +163,13 @@ pub async fn upload_wabbajack_file(
     let metadata = WabbajackMetadata::load(&path).expect("Failed to load Wabbajack metadata");
 
     // Check if file was in DB but unavailable - if so, update it; otherwise create new
-    let wabbajack_archive = match WabbajackArchive::get_by_filename(&filename, &pool)
+    let modlist = match Modlist::get_by_filename(&filename, &pool)
         .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)))?
     {
         Some(existing) if !existing.available => {
             // File was in DB but unavailable - update it
-            log::info!("Updating existing wabbajack archive entry");
-            let updated = WabbajackArchive {
+            log::info!("Updating existing modlist entry");
+            let updated = Modlist {
                 id: existing.id,
                 filename: filename.clone(),
                 name: metadata.name.clone(),
@@ -185,7 +185,7 @@ pub async fn upload_wabbajack_file(
         }
         _ => {
             // Create new entry
-            let wabbajack_archive_egg = WabbajackArchiveEgg {
+            let modlist_egg = ModlistEgg {
                 filename: filename.clone(),
                 name: metadata.name.clone(),
                 version: metadata.version.clone(),
@@ -194,61 +194,61 @@ pub async fn upload_wabbajack_file(
                 available: true,
             };
 
-            wabbajack_archive_egg.create(&pool).map_err(|e| {
+            modlist_egg.create(&pool).map_err(|e| {
                 actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
             })?
         }
     };
 
-    log::info!("wabbajack_archive: {:#?}", wabbajack_archive);
+    log::info!("modlist: {:#?}", modlist);
 
-    // Associate required mod archives
+    // Associate required mods
     for archive in metadata.required_archives() {
-        let mod_archive_to_associate = match ModArchive::get_by_hash(&archive.hash, &pool).map_err(
-            |e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)),
-        )? {
-            Some(existing_mod_archive) => {
+        let mod_to_associate = match Mod::get_by_hash(&archive.hash, &pool).map_err(|e| {
+            actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+        })? {
+            Some(existing_mod) => {
                 // Verify filename, size, and hash match
-                if existing_mod_archive.filename != archive.filename {
+                if existing_mod.filename != archive.filename {
                     return Err(actix_web::error::ErrorInternalServerError(format!(
                         "Hash collision detected: hash {} exists with filename {} but metadata specifies filename {}",
-                        archive.hash, existing_mod_archive.filename, archive.filename
+                        archive.hash, existing_mod.filename, archive.filename
                     )));
                 }
-                if existing_mod_archive.size != archive.size {
+                if existing_mod.size != archive.size {
                     return Err(actix_web::error::ErrorInternalServerError(format!(
                         "Size mismatch for hash {}: database has {} but metadata specifies {}",
-                        archive.hash, existing_mod_archive.size, archive.size
+                        archive.hash, existing_mod.size, archive.size
                     )));
                 }
-                if existing_mod_archive.xxhash64 != archive.hash {
+                if existing_mod.xxhash64 != archive.hash {
                     return Err(actix_web::error::ErrorInternalServerError(format!(
                         "Hash mismatch: database has {} but metadata specifies {}",
-                        existing_mod_archive.xxhash64, archive.hash
+                        existing_mod.xxhash64, archive.hash
                     )));
                 }
 
                 // Enrich name and version from metadata, keep existing available status
-                let updated_mod_archive = ModArchive {
-                    id: existing_mod_archive.id,
-                    filename: existing_mod_archive.filename.clone(),
-                    name: existing_mod_archive.name.or(archive.name()),
-                    version: existing_mod_archive.version.or(archive.version()),
-                    xxhash64: existing_mod_archive.xxhash64.clone(),
-                    size: existing_mod_archive.size,
-                    available: existing_mod_archive.available,
+                let updated_mod = Mod {
+                    id: existing_mod.id,
+                    filename: existing_mod.filename.clone(),
+                    name: existing_mod.name.or(archive.name()),
+                    version: existing_mod.version.or(archive.version()),
+                    xxhash64: existing_mod.xxhash64.clone(),
+                    size: existing_mod.size,
+                    available: existing_mod.available,
                 };
 
-                updated_mod_archive.update(&pool).map_err(|e| {
+                updated_mod.update(&pool).map_err(|e| {
                     actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
                 })?;
 
-                log::info!("Reusing existing mod_archive: {:#?}", updated_mod_archive);
-                updated_mod_archive
+                log::info!("Reusing existing mod: {:#?}", updated_mod);
+                updated_mod
             }
             None => {
-                // Create new mod archive entry
-                let mod_archive_egg = ModArchiveEgg {
+                // Create new mod entry
+                let mod_egg = ModEgg {
                     filename: archive.filename.clone(),
                     name: archive.name(),
                     version: archive.version(),
@@ -257,27 +257,25 @@ pub async fn upload_wabbajack_file(
                     available: false,
                 };
 
-                let created_mod_archive = mod_archive_egg.create(&pool).map_err(|e| {
+                let created_mod = mod_egg.create(&pool).map_err(|e| {
                     actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
                 })?;
 
-                log::info!("Created new mod_archive: {:#?}", created_mod_archive);
-                created_mod_archive
+                log::info!("Created new mod: {:#?}", created_mod);
+                created_mod
             }
         };
 
-        mod_archive_to_associate
-            .associate(&wabbajack_archive, &pool)
-            .map_err(|e| {
-                actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
-            })?;
+        mod_to_associate.associate(&modlist, &pool).map_err(|e| {
+            actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+        })?;
     }
 
     Ok(HttpResponse::Ok().body("ok"))
 }
 
-#[post("/submit/mod-archive/{filename}")]
-pub async fn upload_mod_archive(
+#[post("/submit/mod/{filename}")]
+pub async fn upload_mod(
     filename: web::Path<String>,
     pool: web::Data<Pool<SqliteConnectionManager>>,
     data_dir: web::Data<DataDir>,
@@ -287,13 +285,13 @@ pub async fn upload_mod_archive(
     let pool = pool.into_inner().get().unwrap();
     let filename = filename.into_inner();
     let data_dir = data_dir.into_inner();
-    let path = data_dir.get_mod_archive_path(&filename);
+    let path = data_dir.get_mod_path(&filename);
 
-    log::info!("Request to upload mod archive file {}", filename);
+    log::info!("Request to upload mod file {}", filename);
 
     // Validate the upload request
-    let validation_result = validate_upload_request::<ModArchive>(&req, &filename, &path, &pool)
-        .map_err(|e| {
+    let validation_result =
+        validate_upload_request::<Mod>(&req, &filename, &path, &pool).map_err(|e| {
             actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
         })?;
 
@@ -347,21 +345,21 @@ pub async fn upload_mod_archive(
     }
 
     // Check if file was in DB but unavailable - if so, mark as available; otherwise create new
-    match ModArchive::get_by_hash(&hash, &pool)
+    match Mod::get_by_hash(&hash, &pool)
         .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)))?
     {
-        Some(stored_archive) => {
-            log::info!("Mod archive present in db, marking as available");
-            stored_archive.mark_available(&pool).map_err(|e| {
+        Some(stored_mod) => {
+            log::info!("Mod present in db, marking as available");
+            stored_mod.mark_available(&pool).map_err(|e| {
                 actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
             })?;
         }
 
         None => {
-            log::info!("Mod archive not found in db, creating new one");
+            log::info!("Mod not found in db, creating new one");
             let size = std::fs::metadata(&path).unwrap().len() as u64;
 
-            let mod_archive = ModArchiveEgg {
+            let mod_egg = ModEgg {
                 filename: filename.clone(),
                 name: None,
                 version: None,
@@ -370,7 +368,7 @@ pub async fn upload_mod_archive(
                 available: true,
             };
 
-            mod_archive.create(&pool).map_err(|e| {
+            mod_egg.create(&pool).map_err(|e| {
                 actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
             })?;
         }

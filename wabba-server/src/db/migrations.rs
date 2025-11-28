@@ -4,7 +4,7 @@ use indoc::indoc;
 pub fn migrate(mut conn: PooledConnection<SqliteConnectionManager>) -> Result<()> {
     let migrations: Migrations = Migrations::new(vec![
         M::up(indoc! { r#"
-          CREATE TABLE wabbajack_archive (
+          CREATE TABLE modlist (
               id INTEGER PRIMARY KEY NOT NULL,
               filename TEXT NOT NULL,
               name TEXT NOT NULL,
@@ -13,10 +13,10 @@ pub fn migrate(mut conn: PooledConnection<SqliteConnectionManager>) -> Result<()
               xxhash64 TEXT NOT NULL,
               available BOOLEAN NOT NULL DEFAULT FALSE
           );
-          CREATE INDEX wabbajack_archive_filename_idx ON wabbajack_archive(filename);
-          CREATE INDEX wabbajack_archive_xxhash64_idx ON wabbajack_archive(xxhash64);
+          CREATE INDEX modlist_filename_idx ON modlist(filename);
+          CREATE INDEX modlist_xxhash64_idx ON modlist(xxhash64);
 
-          CREATE TABLE mod_archive (
+          CREATE TABLE "mod" (
               id INTEGER PRIMARY KEY NOT NULL,
               filename TEXT NOT NULL,
               name TEXT,
@@ -25,16 +25,16 @@ pub fn migrate(mut conn: PooledConnection<SqliteConnectionManager>) -> Result<()
               xxhash64 TEXT NOT NULL,
               available BOOLEAN NOT NULL DEFAULT FALSE
           );
-          CREATE INDEX mod_archive_filename_idx ON mod_archive(filename);
-          CREATE INDEX mod_archive_xxhash64_idx ON mod_archive(xxhash64);
+          CREATE INDEX mod_filename_idx ON "mod"(filename);
+          CREATE INDEX mod_xxhash64_idx ON "mod"(xxhash64);
 
           CREATE TABLE mod_association (
-              archive_id INTEGER NOT NULL,
+              modlist_id INTEGER NOT NULL,
               mod_id INTEGER NOT NULL,
-              PRIMARY KEY(archive_id, mod_id),
-              FOREIGN KEY(archive_id) REFERENCES wabbajack_archive(id),
-              FOREIGN KEY(mod_id) REFERENCES mod_archive(id),
-              UNIQUE(archive_id, mod_id)
+              PRIMARY KEY(modlist_id, mod_id),
+              FOREIGN KEY(modlist_id) REFERENCES modlist(id),
+              FOREIGN KEY(mod_id) REFERENCES "mod"(id),
+              UNIQUE(modlist_id, mod_id)
           );
       "#}),
         // M::up( indoc! { r#"

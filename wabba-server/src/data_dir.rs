@@ -34,7 +34,7 @@ impl DataDir {
         self.0.join("Modlists").join(modlist_filename)
     }
 
-    pub fn get_mod_archive_path(&self, mod_filename: &str) -> PathBuf {
+    pub fn get_mod_path(&self, mod_filename: &str) -> PathBuf {
         self.0.join("Downloads").join(mod_filename)
     }
 }
