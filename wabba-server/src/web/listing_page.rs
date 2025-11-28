@@ -38,6 +38,16 @@ pub async fn listing_page(
         .map_err(actix_web::error::ErrorInternalServerError)?;
     let modlists = Modlist::get_all(&conn).map_err(actix_web::error::ErrorInternalServerError)?;
 
+    // Compute mod counts for each modlist
+    let modlists_with_counts: Vec<_> = modlists
+        .iter()
+        .map(|modlist| {
+            let mods_total = modlist.count_mods_total(&conn).unwrap_or(0);
+            let mods_available = modlist.count_mods_available(&conn).unwrap_or(0);
+            (modlist, mods_total, mods_available)
+        })
+        .collect();
+
     let page = html! {
         (maud::DOCTYPE)
         html {
@@ -50,7 +60,7 @@ pub async fn listing_page(
             body.page-listing {
                 div.container {
                     h1 { "Wabbajack Modlists" }
-                    @if modlists.is_empty() {
+                    @if modlists_with_counts.is_empty() {
                         p.empty-state { "No modlists found." }
                     } @else {
                         table.modlist-table {
@@ -61,11 +71,13 @@ pub async fn listing_page(
                                     th { "Filename" }
                                     th { "Size" }
                                     th { "Hash" }
+                                    th { "Mods total" }
+                                    th { "Mods available" }
                                     th { "Status" }
                                 }
                             }
                             tbody {
-                                @for modlist in &modlists {
+                                @for (modlist, mods_total, mods_available) in &modlists_with_counts {
                                     tr {
                                         td.name {
                                             a href={"/modlists/" (modlist.id)} {
@@ -78,11 +90,13 @@ pub async fn listing_page(
                                         td.hash {
                                             code { (format_hash(&modlist.xxhash64)) }
                                         }
+                                        td { (mods_total) }
+                                        td { (mods_available) }
                                         td.status {
-                                            @if modlist.available {
-                                                span.status-badge.available { "Available" }
+                                            @if *mods_total == 0 || *mods_available == *mods_total {
+                                                span.status-badge.available { "Ready" }
                                             } @else {
-                                                span.status-badge.unavailable { "Unavailable" }
+                                                span.status-badge.missing { "Missing files" }
                                             }
                                         }
                                     }

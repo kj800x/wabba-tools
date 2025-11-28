@@ -17,9 +17,9 @@
   }
 
   h1 {
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
     color: #2c3e50;
-    font-size: 2rem;
+    font-size: 1.75rem;
     font-weight: 600;
   }
 
@@ -46,21 +46,23 @@
     }
 
     th {
-      padding: 1rem;
+      padding: 0.75rem 1rem;
       text-align: left;
       font-weight: 600;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       word-wrap: break-word;
       overflow-wrap: break-word;
 
-      &:nth-child(1) { width: 23%; }  /* Name */
-      &:nth-child(2) { width: 10%; }   /* Version */
-      &:nth-child(3) { width: 23%; }   /* Filename */
-      &:nth-child(4) { width: 10%; }   /* Size */
-      &:nth-child(5) { width: 18%; }   /* Hash */
-      &:nth-child(6) { width: 16%; }   /* Status */
+      &:nth-child(1) { width: 18%; }  /* Name */
+      &:nth-child(2) { width: 8%; }   /* Version */
+      &:nth-child(3) { width: 18%; }   /* Filename */
+      &:nth-child(4) { width: 8%; }   /* Size */
+      &:nth-child(5) { width: 15%; }   /* Hash */
+      &:nth-child(6) { width: 8%; }   /* Mods total */
+      &:nth-child(7) { width: 8%; }   /* Mods available */
+      &:nth-child(8) { width: 17%; }   /* Status */
     }
 
     tbody tr {
@@ -77,12 +79,13 @@
     }
 
     td {
-      padding: 1rem;
+      padding: 0.75rem 1rem;
       vertical-align: middle;
       word-wrap: break-word;
       overflow-wrap: break-word;
       word-break: break-word;
       overflow: hidden;
+      font-size: 0.9rem;
 
       &.name a {
         color: #3498db;
@@ -132,6 +135,11 @@
     }
 
     &.unavailable {
+      background-color: #fff3cd;
+      color: #856404;
+    }
+
+    &.missing {
       background-color: #f8d7da;
       color: #721c24;
     }

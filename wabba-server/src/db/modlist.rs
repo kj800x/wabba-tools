@@ -100,6 +100,32 @@ impl Modlist {
 
         Ok(())
     }
+
+    pub fn count_mods_total(
+        &self,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<u64, rusqlite::Error> {
+        let count: i64 = conn
+            .prepare("SELECT COUNT(*) FROM mod_association WHERE modlist_id = ?1")?
+            .query_row(params![self.id], |row| row.get(0))?;
+
+        Ok(count as u64)
+    }
+
+    pub fn count_mods_available(
+        &self,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<u64, rusqlite::Error> {
+        let count: i64 = conn
+            .prepare(
+                "SELECT COUNT(*) FROM mod_association
+             INNER JOIN \"mod\" ON mod_association.mod_id = \"mod\".id
+             WHERE mod_association.modlist_id = ?1 AND \"mod\".available = TRUE",
+            )?
+            .query_row(params![self.id], |row| row.get(0))?;
+
+        Ok(count as u64)
+    }
 }
 
 impl ModlistEgg {

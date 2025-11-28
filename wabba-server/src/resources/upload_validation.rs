@@ -10,42 +10,25 @@ use crate::db::modlist::Modlist;
 pub enum UploadValidationResult {
     NotModified,
     AcceptUpload,
-    RejectCorruptedState(String),
     RejectNeedsBootstrap(String),
     RejectUserError(String),
 }
 
 pub trait ArchiveType: Clone {
-    fn get_by_hash(
-        hash: &str,
-        conn: &PooledConnection<SqliteConnectionManager>,
-    ) -> Result<Option<Self>, rusqlite::Error>;
     fn get_by_filename(
         filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error>;
-    fn filename(&self) -> &str;
     fn hash(&self) -> &str;
     fn available(&self) -> bool;
 }
 
 impl ArchiveType for Mod {
-    fn get_by_hash(
-        hash: &str,
-        conn: &PooledConnection<SqliteConnectionManager>,
-    ) -> Result<Option<Self>, rusqlite::Error> {
-        Mod::get_by_hash(hash, conn)
-    }
-
     fn get_by_filename(
         filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
         Mod::get_by_filename(filename, conn)
-    }
-
-    fn filename(&self) -> &str {
-        &self.filename
     }
 
     fn hash(&self) -> &str {
@@ -58,22 +41,11 @@ impl ArchiveType for Mod {
 }
 
 impl ArchiveType for Modlist {
-    fn get_by_hash(
-        hash: &str,
-        conn: &PooledConnection<SqliteConnectionManager>,
-    ) -> Result<Option<Self>, rusqlite::Error> {
-        Modlist::get_by_hash(hash, conn)
-    }
-
     fn get_by_filename(
         filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
         Modlist::get_by_filename(filename, conn)
-    }
-
-    fn filename(&self) -> &str {
-        &self.filename
     }
 
     fn hash(&self) -> &str {
