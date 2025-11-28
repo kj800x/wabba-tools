@@ -68,6 +68,21 @@ impl Mod {
         Ok(archive)
     }
 
+    pub fn get_by_filename_and_hash(
+        filename: &str,
+        hash: &str,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Option<Self>, rusqlite::Error> {
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM \"mod\" WHERE filename = ?1 AND xxhash64 = ?2")?
+        .query_row(params![filename, hash], |row| {
+            Ok(Mod::from_row(row))
+        })
+        .optional()?
+        .transpose()?;
+
+        Ok(archive)
+    }
+
     pub fn get_by_hashes(
         hashes: &[String],
         conn: &PooledConnection<SqliteConnectionManager>,
@@ -100,9 +115,7 @@ impl Mod {
              ORDER BY \"mod\".filename"
         )?;
         let mods = stmt
-            .query_map(params![modlist_id], |row| {
-                Ok(Mod::from_row(row)?)
-            })?
+            .query_map(params![modlist_id], |row| Ok(Mod::from_row(row)?))?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(mods)
@@ -159,4 +172,3 @@ impl ModEgg {
         })
     }
 }
-

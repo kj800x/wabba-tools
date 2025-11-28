@@ -204,29 +204,33 @@ pub async fn upload_modlist(
 
     // Associate required mods
     for archive in metadata.required_archives() {
-        let mod_to_associate = match Mod::get_by_hash(&archive.hash, &pool).map_err(|e| {
-            actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
-        })? {
+        let mod_to_associate = match Mod::get_by_filename_and_hash(
+            &archive.filename,
+            &archive.hash,
+            &pool,
+        )
+        .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)))?
+        {
             Some(existing_mod) => {
-                // Verify filename, size, and hash match
-                if existing_mod.filename != archive.filename {
-                    return Err(actix_web::error::ErrorInternalServerError(format!(
-                        "Hash collision detected: hash {} exists with filename {} but metadata specifies filename {}",
-                        archive.hash, existing_mod.filename, archive.filename
-                    )));
-                }
+                // // Verify filename, size, and hash match
+                // if existing_mod.filename != archive.filename {
+                //     return Err(actix_web::error::ErrorInternalServerError(format!(
+                //         "Hash collision detected: filename {} exists with hash {} but metadata specifies filename {}",
+                //         existing_mod.filename, existing_mod.xxhash64, archive.filename
+                //     )));
+                // }
                 if existing_mod.size != archive.size {
                     return Err(actix_web::error::ErrorInternalServerError(format!(
-                        "Size mismatch for hash {}: database has {} but metadata specifies {}",
-                        archive.hash, existing_mod.size, archive.size
+                        "Size mismatch for filename {}: database has {} but metadata specifies {}",
+                        archive.filename, existing_mod.size, archive.size
                     )));
                 }
-                if existing_mod.xxhash64 != archive.hash {
-                    return Err(actix_web::error::ErrorInternalServerError(format!(
-                        "Hash mismatch: database has {} but metadata specifies {}",
-                        existing_mod.xxhash64, archive.hash
-                    )));
-                }
+                // if existing_mod.xxhash64 != archive.hash {
+                //     return Err(actix_web::error::ErrorInternalServerError(format!(
+                //         "Hash mismatch for filename {}: database has {} but metadata specifies {}",
+                //         existing_mod.filename, existing_mod.xxhash64, archive.hash
+                //     )));
+                // }
 
                 // Enrich name and version from metadata, keep existing available status
                 let updated_mod = Mod {

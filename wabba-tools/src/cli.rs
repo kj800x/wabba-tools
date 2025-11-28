@@ -31,4 +31,15 @@ pub enum Commands {
         #[arg(value_name = "FILE")]
         file: PathBuf,
     },
+
+    /// Upload a modlist file or mod file to the server
+    Upload {
+        /// Base URL of the server to upload to
+        #[arg(value_name = "SERVER")]
+        server: String,
+
+        /// Path to the modlist file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+    },
 }

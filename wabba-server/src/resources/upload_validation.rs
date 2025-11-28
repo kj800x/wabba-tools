@@ -95,7 +95,6 @@ pub fn validate_upload_request<A: ArchiveType>(
 
     // Require If-None-Match header
     let if_none_match = headers.get("If-None-Match").and_then(|x| x.to_str().ok());
-
     let if_none_match = match if_none_match {
         Some(hash) => hash,
         None => {
@@ -105,55 +104,35 @@ pub fn validate_upload_request<A: ArchiveType>(
         }
     };
 
-    // Check if filename exists in DB - if it does, its hash must match If-None-Match
+    // Check if filename exists in DB - uniqueness is only by filename
     if let Some(stored_by_filename) = A::get_by_filename(filename, conn)? {
+        // Filename exists in database - check hash and availability
         if stored_by_filename.hash() != if_none_match {
+            // Filename exists but with different hash - this is an error
             return Ok(UploadValidationResult::RejectUserError(format!(
                 "Filename already exists in database with different hash: user provided {}, but database has {}",
                 if_none_match,
                 stored_by_filename.hash()
             )));
         }
-        // Hash matches - continue with normal validation logic below
-    }
 
-    // Check if file exists in DB by hash (only if available)
-    if let Some(stored_archive) = A::get_by_hash(if_none_match, conn)? {
-        if stored_archive.available() {
-            // Hash matches, file is in DB, and available
-            if stored_archive.filename() == filename {
-                return Ok(UploadValidationResult::NotModified);
-            } else {
-                return Ok(UploadValidationResult::RejectCorruptedState(
-                    "Content hash already stored in db under a different filename".to_string(),
-                ));
-            }
+        // Hash matches - check availability
+        if stored_by_filename.available() {
+            // Filename exists with matching hash and is available - not modified
+            return Ok(UploadValidationResult::NotModified);
         } else {
-            // File is in DB but not available - check if it's on disk
-            if file_path.exists() {
-                return Ok(UploadValidationResult::RejectNeedsBootstrap(
-                    "File exists in db as unavailable and also exists on disk".to_string(),
-                ));
-            }
-
-            if stored_archive.filename() != filename {
-                return Ok(UploadValidationResult::RejectCorruptedState(
-                    "Content hash already stored in db under a different filename".to_string(),
-                ));
-            }
-
-            // File is in DB but unavailable and not on disk - accept upload
+            // Filename exists with matching hash but is unavailable - accept upload
             return Ok(UploadValidationResult::AcceptUpload);
         }
     }
 
-    // File is not in DB - check if it exists on disk
+    // Filename doesn't exist in DB - check if file exists on disk
     if file_path.exists() {
         return Ok(UploadValidationResult::RejectNeedsBootstrap(
             "File already exists on disk (but not db)".to_string(),
         ));
     }
 
-    // File is not in DB and not on disk - accept upload
+    // Filename is not in DB and file doesn't exist on disk - accept upload
     Ok(UploadValidationResult::AcceptUpload)
 }

@@ -3,6 +3,10 @@ use clap::Parser;
 mod cli;
 mod download_dir;
 use env_logger::Builder;
+use reqwest::Client;
+use reqwest::header::IF_NONE_MATCH;
+use tokio::fs::File;
+use tokio_util::codec::{BytesCodec, FramedRead};
 use wabba_protocol::{hash::Hash, wabbajack::WabbajackMetadata};
 
 #[derive(Debug)]
@@ -10,6 +14,27 @@ struct FileComparisonResult {
     missing_files: Vec<String>,
     satisfied_files: Vec<String>,
     extraneous_files: Vec<String>,
+}
+
+enum UploadType {
+    Modlist,
+    Mod,
+}
+
+impl UploadType {
+    fn from_extension(extension: &str) -> Self {
+        match extension {
+            "wabbajack" => Self::Modlist,
+            _ => Self::Mod,
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Modlist => "modlist",
+            Self::Mod => "mod",
+        }
+    }
 }
 
 // Compare two lists of files and return:
@@ -43,7 +68,8 @@ fn compare_file_lists(
     result
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = cli::Cli::parse();
 
     Builder::from_default_env()
@@ -83,9 +109,57 @@ fn main() {
 
             log::info!("Missing files: {:#?}", result.missing_files);
         }
+
         cli::Commands::Hash { file } => {
             let hash = Hash::compute(&std::fs::read(file).expect("Failed to read file"));
             log::info!("Hash: {}", hash);
+        }
+
+        cli::Commands::Upload { server, file } => {
+            let upload_type = UploadType::from_extension(
+                file.extension()
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or_default(),
+            );
+
+            log::info!("Computing hash for {}", file.display());
+            let hash = Hash::compute(&std::fs::read(file).expect("Failed to read file"));
+
+            let url = format!(
+                "{}/submit/{}/{}",
+                server,
+                upload_type.as_str(),
+                file.file_name().unwrap().to_str().unwrap_or_default()
+            );
+
+            // Open the file asynchronously
+            let file = File::open(file).await.unwrap();
+            let stream = FramedRead::new(file, BytesCodec::new());
+            let body = reqwest::Body::wrap_stream(stream);
+
+            log::info!("POST {}", url);
+            let client = Client::new();
+            let response = client
+                .post(&url)
+                .header(IF_NONE_MATCH, hash.to_string())
+                .body(body)
+                .send()
+                .await
+                .unwrap();
+            // .error_for_status()
+            // .unwrap();
+
+            let response_code = response.status().as_u16();
+            match response_code {
+                200 => log::info!("Upload successful"),
+                304 => log::info!("File already exists"),
+                _ => {
+                    log::error!("Upload failed: {}", response_code);
+                    log::error!("Response: {:#?}", response);
+                    log::error!("Response body: {}", response.text().await.unwrap());
+                }
+            }
         }
     }
 
