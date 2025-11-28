@@ -32,6 +32,7 @@ use std::path::PathBuf;
 use crate::data_dir::DataDir;
 use crate::db::migrations::migrate;
 use crate::prelude::*;
+use crate::resources::bootstrap::{bootstrap, bootstrap_modlists, bootstrap_mods};
 use crate::resources::{hello_world, upload_mod, upload_modlist};
 use crate::web::details_page::details_page;
 use crate::web::listing_page::listing_page;
@@ -58,6 +59,9 @@ async fn start_http(
             .service(upload_mod)
             .service(listing_page)
             .service(details_page)
+            .service(bootstrap)
+            .service(bootstrap_modlists)
+            .service(bootstrap_mods)
             .service(serve_static_file!("htmx.min.js"))
             .service(serve_static_file!("idiomorph.min.js"))
             .service(serve_static_file!("idiomorph-ext.min.js"))

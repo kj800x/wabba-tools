@@ -57,12 +57,12 @@ pub fn ingest_modlist(
     let size = std::fs::metadata(path).unwrap().len() as u64;
     let metadata = WabbajackMetadata::load(path).expect("Failed to load Wabbajack metadata");
 
-    // Check if file was in DB but unavailable - if so, update it; otherwise create new
+    // Check if modlist already exists - update if needed, otherwise create new
     let modlist = match Modlist::get_by_filename(&filename, &conn)
         .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)))?
     {
-        Some(existing) if !existing.available => {
-            // File was in DB but unavailable - update it
+        Some(existing) => {
+            // Modlist exists - update it to ensure metadata is current
             log::info!("Updating existing modlist entry");
             let updated = Modlist {
                 id: existing.id,
@@ -78,8 +78,9 @@ pub fn ingest_modlist(
             })?;
             updated
         }
-        _ => {
+        None => {
             // Create new entry
+            log::info!("Creating new modlist entry");
             let modlist_egg = ModlistEgg {
                 filename: filename.to_string(),
                 name: metadata.name.clone(),

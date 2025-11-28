@@ -104,6 +104,27 @@ pub async fn listing_page(
                             }
                         }
                     }
+                    div.bootstrap-section {
+                        h2 { "Bootstrap Database" }
+                        p {
+                            "Scan the data directory and update the database with all modlists and mods found on disk."
+                        }
+                        form method="post" action="/bootstrap" {
+                            button.bootstrap-button type="submit" {
+                                "Run Bootstrap"
+                            }
+                        }
+                        form method="post" action="/bootstrap/modlists" {
+                            button.bootstrap-button type="submit" {
+                                "Run Modlists Bootstrap"
+                            }
+                        }
+                        form method="post" action="/bootstrap/mods" {
+                            button.bootstrap-button type="submit" {
+                                "Run Mods Bootstrap"
+                            }
+                        }
+                    }
                 }
             }
         }

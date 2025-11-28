@@ -53,21 +53,6 @@ impl Mod {
         Ok(archive)
     }
 
-    pub fn get_by_hash(
-        hash: &str,
-        conn: &PooledConnection<SqliteConnectionManager>,
-    ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM \"mod\" WHERE xxhash64 = ?1")?
-      .query_row(params![hash], |row| {
-        Ok(Mod::from_row(row))
-      })
-      .optional()?
-
-          .transpose()?;
-
-        Ok(archive)
-    }
-
     pub fn get_by_filename_and_hash(
         filename: &str,
         hash: &str,
@@ -81,26 +66,6 @@ impl Mod {
         .transpose()?;
 
         Ok(archive)
-    }
-
-    pub fn get_by_hashes(
-        hashes: &[String],
-        conn: &PooledConnection<SqliteConnectionManager>,
-    ) -> Result<Vec<Self>, rusqlite::Error> {
-        if hashes.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // For dynamic IN clauses, we'll query each hash individually and collect results
-        // This is less efficient but more reliable than trying to use dynamic params
-        let mut all_mods = Vec::new();
-        for hash in hashes {
-            if let Some(mod_item) = Self::get_by_hash(hash, conn)? {
-                all_mods.push(mod_item);
-            }
-        }
-
-        Ok(all_mods)
     }
 
     pub fn get_by_modlist_id(

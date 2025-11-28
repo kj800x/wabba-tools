@@ -51,21 +51,6 @@ impl Modlist {
         Ok(archive)
     }
 
-    pub fn get_by_hash(
-        hash: &str,
-        conn: &PooledConnection<SqliteConnectionManager>,
-    ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist WHERE xxhash64 = ?1")?
-      .query_row(params![hash], |row| {
-        Ok(Modlist::from_row(row))
-      })
-      .optional()?
-
-          .transpose()?;
-
-        Ok(archive)
-    }
-
     pub fn get_by_id(
         id: u64,
         conn: &PooledConnection<SqliteConnectionManager>,

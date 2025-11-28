@@ -1,10 +1,11 @@
+pub mod bootstrap;
 pub mod ingest;
 pub mod upload_validation;
 
 use actix_web::HttpRequest;
 use std::path::Path;
 use std::time::SystemTime;
-use tokio::fs::File;
+use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufWriter;
 use wabba_protocol::hash::Hash;
@@ -24,14 +25,29 @@ use crate::resources::upload_validation::{UploadValidationResult, validate_uploa
 
 /// Streams the upload payload to a file, with progress logging every 5 seconds.
 /// Returns the total number of bytes written.
+/// This function will never overwrite an existing file - it will fail if the file already exists.
 async fn stream_upload_to_file(
     path: &Path,
     filename: &str,
     body: web::Payload,
 ) -> Result<usize, actix_web::Error> {
-    let file = File::create(path)
+    // Use create_new(true) to ensure we never overwrite an existing file
+    // This is atomic and prevents race conditions
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
         .await
-        .map_err(actix_web::error::ErrorInternalServerError)?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                actix_web::error::ErrorBadRequest(format!("File already exists: {}", filename))
+            } else {
+                actix_web::error::ErrorInternalServerError(format!(
+                    "Failed to create file {}: {}",
+                    filename, e
+                ))
+            }
+        })?;
     let mut writer = BufWriter::new(file);
 
     log::info!("Uploading file {}", filename);

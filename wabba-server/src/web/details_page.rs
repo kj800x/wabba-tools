@@ -48,6 +48,10 @@ pub async fn details_page(
     let mods = Mod::get_by_modlist_id(archive_id, &conn)
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
+    // Separate unavailable mods for the missing mods table
+    let unavailable_mods: Vec<_> = mods.iter().filter(|m| !m.available).cloned().collect();
+    let show_missing_table = !unavailable_mods.is_empty() && unavailable_mods.len() < 25;
+
     let page = html! {
         (maud::DOCTYPE)
         html {
@@ -67,6 +71,52 @@ pub async fn details_page(
                             p { strong { "Filename: " } (modlist.filename.clone()) }
                             p { strong { "Size: " } (format_size(modlist.size)) }
                             p { strong { "Hash: " } (format_hash(&modlist.xxhash64)) }
+                        }
+                    }
+
+                    @if show_missing_table {
+                        h2 { "Missing Mods" }
+                        table.mod-table {
+                            thead {
+                                tr {
+                                    th { "Filename" }
+                                    th { "Name" }
+                                    th { "Version" }
+                                    th { "Size" }
+                                    th { "Hash" }
+                                    th { "Status" }
+                                }
+                            }
+                            tbody {
+                                @for mod_item in &unavailable_mods {
+                                    tr {
+                                        td.filename { (mod_item.filename.clone()) }
+                                        td.name {
+                                            @if let Some(ref name) = mod_item.name {
+                                                (name)
+                                            } @else {
+                                                em { "Unknown" }
+                                            }
+                                        }
+                                        td.version {
+                                            @if let Some(ref version) = mod_item.version {
+                                                (version)
+                                            } @else {
+                                                em { "-" }
+                                            }
+                                        }
+                                        td.size {
+                                            (format_size(mod_item.size))
+                                        }
+                                        td.hash {
+                                            code { (format_hash(&mod_item.xxhash64)) }
+                                        }
+                                        td.status {
+                                            span.status-badge.unavailable { "Unavailable" }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 

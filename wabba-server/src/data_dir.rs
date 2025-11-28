@@ -30,11 +30,19 @@ impl DataDir {
         self.0.join("db.db")
     }
 
+    pub fn get_modlist_dir(&self) -> PathBuf {
+        self.0.join("Modlists")
+    }
+
+    pub fn get_mod_dir(&self) -> PathBuf {
+        self.0.join("Downloads")
+    }
+
     pub fn get_modlist_path(&self, modlist_filename: &str) -> PathBuf {
-        self.0.join("Modlists").join(modlist_filename)
+        self.get_modlist_dir().join(modlist_filename)
     }
 
     pub fn get_mod_path(&self, mod_filename: &str) -> PathBuf {
-        self.0.join("Downloads").join(mod_filename)
+        self.get_mod_dir().join(mod_filename)
     }
 }
