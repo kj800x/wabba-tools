@@ -55,7 +55,8 @@ impl WabbajackMetadata {
         let raw_value: serde_json::Value = serde_json::from_str(&contents)?;
         let formatted_value = serde_json::to_string_pretty(&raw_value)?;
 
-        log::debug!("Wabbajack metadata: {}", formatted_value);
+        print_with_line_numbers(&formatted_value);
+        // log::debug!("Wabbajack metadata: {}", formatted_value);
 
         let metadata: WabbajackMetadata = serde_json::from_str(&formatted_value)?;
         Ok(metadata)
@@ -84,9 +85,9 @@ impl WabbajackMetadata {
     }
 }
 
-// fn print_with_line_numbers(text: &str) {
-//     let lines = text.lines();
-//     for (i, line) in lines.enumerate() {
-//         println!("{:4}: {}", i + 1, line);
-//     }
-// }
+fn print_with_line_numbers(text: &str) {
+    let lines = text.lines();
+    for (i, line) in lines.enumerate() {
+        println!("{:4}: {}", i + 1, line);
+    }
+}

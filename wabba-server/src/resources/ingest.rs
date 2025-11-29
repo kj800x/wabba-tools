@@ -36,6 +36,7 @@ pub fn ingest_mod(
                 version: None,
                 xxhash64: hash.to_string(),
                 size: size,
+                source: None,
                 available: true,
             };
 
@@ -136,6 +137,7 @@ pub fn ingest_modlist(
                     version: existing_mod.version.or(archive.version()),
                     xxhash64: existing_mod.xxhash64.clone(),
                     size: existing_mod.size,
+                    source: existing_mod.source.or(Some(archive.state.clone())),
                     available: existing_mod.available,
                 };
 
@@ -154,6 +156,7 @@ pub fn ingest_modlist(
                     version: archive.version(),
                     xxhash64: archive.hash.clone(),
                     size: archive.size,
+                    source: Some(archive.state.clone()),
                     available: false,
                 };
 

@@ -2,6 +2,7 @@ use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
+use wabba_protocol::archive_state::ArchiveState;
 
 use crate::db::modlist::Modlist;
 
@@ -13,6 +14,7 @@ pub struct Mod {
     pub version: Option<String>,
     pub size: u64,
     pub xxhash64: String,
+    pub source: Option<ArchiveState>,
     pub available: bool,
 }
 
@@ -23,6 +25,7 @@ pub struct ModEgg {
     pub version: Option<String>,
     pub size: u64,
     pub xxhash64: String,
+    pub source: Option<ArchiveState>,
     pub available: bool,
 }
 
@@ -35,7 +38,10 @@ impl Mod {
             version: row.get::<_, Option<String>>(3)?,
             size: row.get(4)?,
             xxhash64: row.get(5)?,
-            available: row.get(6)?,
+            source: row
+                .get::<_, Option<String>>(6)?
+                .and_then(|x| serde_json::from_str(&x).ok()),
+            available: row.get(7)?,
         })
     }
 
@@ -43,7 +49,7 @@ impl Mod {
         filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM \"mod\" WHERE filename = ?1")?
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, source, available FROM \"mod\" WHERE filename = ?1")?
         .query_row(params![filename], |row| {
           Ok(Mod::from_row(row))
         })
@@ -58,7 +64,7 @@ impl Mod {
         hash: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM \"mod\" WHERE filename = ?1 AND xxhash64 = ?2")?
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, source, available FROM \"mod\" WHERE filename = ?1 AND xxhash64 = ?2")?
         .query_row(params![filename, hash], |row| {
             Ok(Mod::from_row(row))
         })
@@ -72,7 +78,7 @@ impl Mod {
         id: u64,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM \"mod\" WHERE id = ?1")?
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, source, available FROM \"mod\" WHERE id = ?1")?
             .query_row(params![id], |row| {
                 Ok(Mod::from_row(row))
             })
@@ -85,7 +91,7 @@ impl Mod {
     pub fn get_all(
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
-        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM \"mod\" ORDER BY filename")?;
+        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, source, available FROM \"mod\" ORDER BY filename")?;
         let mods = stmt
             .query_map([], |row| Ok(Mod::from_row(row)?))?
             .collect::<Result<Vec<_>, _>>()?;
@@ -96,7 +102,7 @@ impl Mod {
     pub fn get_unavailable(
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
-        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM \"mod\" WHERE available = FALSE ORDER BY filename")?;
+        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, source, available FROM \"mod\" WHERE available = FALSE ORDER BY filename")?;
         let mods = stmt
             .query_map([], |row| Ok(Mod::from_row(row)?))?
             .collect::<Result<Vec<_>, _>>()?;
@@ -109,7 +115,7 @@ impl Mod {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
         let mut stmt = conn.prepare(
-            "SELECT \"mod\".id, \"mod\".filename, \"mod\".name, \"mod\".version, \"mod\".size, \"mod\".xxhash64, \"mod\".available
+            "SELECT \"mod\".id, \"mod\".filename, \"mod\".name, \"mod\".version, \"mod\".size, \"mod\".xxhash64, \"mod\".source, \"mod\".available
              FROM \"mod\"
              INNER JOIN mod_association ON \"mod\".id = mod_association.mod_id
              WHERE mod_association.modlist_id = ?1
@@ -126,8 +132,8 @@ impl Mod {
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<(), rusqlite::Error> {
-        conn.prepare("INSERT OR REPLACE INTO \"mod\" (id, filename, name, version, size, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?
-        .execute(params![self.id, self.filename, self.name, self.version, self.size, self.xxhash64, self.available])?;
+        conn.prepare("INSERT OR REPLACE INTO \"mod\" (id, filename, name, version, size, xxhash64, source, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")?
+        .execute(params![self.id, self.filename, self.name, self.version, self.size, self.xxhash64, self.source.clone().map(|x| serde_json::to_string(&x).unwrap()), self.available])?;
 
         Ok(())
     }
@@ -188,7 +194,7 @@ impl Mod {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
         let mut stmt = conn.prepare(
-            "SELECT id, filename, name, version, size, xxhash64, available
+            "SELECT id, filename, name, version, size, xxhash64, source, available
              FROM \"mod\"
              WHERE filename = ?1 AND id != ?2
              ORDER BY id",
@@ -206,7 +212,7 @@ impl Mod {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
         let mut stmt = conn.prepare(
-            "SELECT id, filename, name, version, size, xxhash64, available
+            "SELECT id, filename, name, version, size, xxhash64, source, available
              FROM \"mod\"
              WHERE name = ?1 AND id != ?2
              ORDER BY id",
@@ -224,8 +230,8 @@ impl ModEgg {
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Mod, rusqlite::Error> {
-        conn.prepare("INSERT INTO \"mod\" (filename, name, version, size, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?
-          .execute(params![self.filename, self.name, self.version, self.size, self.xxhash64, self.available])?;
+        conn.prepare("INSERT INTO \"mod\" (filename, name, version, size, xxhash64, source, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?
+          .execute(params![self.filename, self.name, self.version, self.size, self.xxhash64, self.source.clone().map(|x| serde_json::to_string(&x).unwrap()), self.available])?;
 
         Ok(Mod {
             id: conn.last_insert_rowid() as u64,
@@ -234,6 +240,7 @@ impl ModEgg {
             version: self.version.clone(),
             size: self.size,
             xxhash64: self.xxhash64.clone(),
+            source: self.source.clone(),
             available: self.available,
         })
     }

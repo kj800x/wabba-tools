@@ -22,6 +22,7 @@ pub fn migrate(mut conn: PooledConnection<SqliteConnectionManager>) -> Result<()
               filename TEXT NOT NULL,
               name TEXT,
               version TEXT,
+              source TEXT,
               size INTEGER NOT NULL,
               xxhash64 TEXT NOT NULL,
               available BOOLEAN NOT NULL DEFAULT FALSE,

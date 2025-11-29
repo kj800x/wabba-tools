@@ -1,7 +1,7 @@
 #![allow(unused)]
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(tag = "$type")]
 pub enum ArchiveState {
     #[serde(rename = "NexusDownloader, Wabbajack.Lib")]
@@ -61,10 +61,10 @@ pub enum ArchiveState {
     #[serde(rename = "LoversLabOAuthDownloader, Wabbajack.Lib")]
     #[serde(rename_all = "PascalCase")]
     LoversLabOAuthDownloader {
-        author: String,
-        description: String,
+        author: Option<String>,
+        description: Option<String>,
         #[serde(rename = "IPS4File")]
-        ips4_file: String,
+        ips4_file: Option<String>,
         #[serde(rename = "IPS4Mod")]
         ips4_mod: u64,
         #[serde(rename = "IPS4Url")]
@@ -74,11 +74,11 @@ pub enum ArchiveState {
         is_attachment: bool,
         #[serde(rename = "IsNSFW")]
         is_nsfw: bool,
-        name: String,
+        name: Option<String>,
         primary_key_string: String,
         #[serde(rename = "URL")]
         url: String,
-        version: String,
+        version: Option<String>,
     },
 
     #[serde(other)]
@@ -104,9 +104,8 @@ impl ArchiveState {
 
     pub fn name(&self) -> Option<String> {
         match self {
-            ArchiveState::NexusDownloader { name, .. }
-            | ArchiveState::LoversLabOAuthDownloader { name, .. } => Some(name.clone()),
-
+            ArchiveState::NexusDownloader { name, .. } => Some(name.clone()),
+            ArchiveState::LoversLabOAuthDownloader { name, .. } => name.clone(),
             ArchiveState::HttpDownloader { .. }
             | ArchiveState::GameFileSourceDownloader { .. }
             | ArchiveState::WabbajackCDNDownloader { .. }
@@ -120,9 +119,8 @@ impl ArchiveState {
 
     pub fn version(&self) -> Option<String> {
         match self {
-            ArchiveState::NexusDownloader { version, .. }
-            | ArchiveState::LoversLabOAuthDownloader { version, .. } => Some(version.clone()),
-
+            ArchiveState::NexusDownloader { version, .. } => Some(version.clone()),
+            ArchiveState::LoversLabOAuthDownloader { version, .. } => version.clone(),
             ArchiveState::HttpDownloader { .. }
             | ArchiveState::GameFileSourceDownloader { .. }
             | ArchiveState::WabbajackCDNDownloader { .. }
