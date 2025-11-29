@@ -30,6 +30,269 @@ fn format_hash(hash: &str) -> String {
     }
 }
 
+#[get("/mod/{id}")]
+pub async fn mod_details_page(
+    id: web::Path<u64>,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+) -> Result<impl Responder, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let mod_id = id.into_inner();
+
+    let mod_item = Mod::get_by_id(mod_id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .ok_or_else(|| actix_web::error::ErrorNotFound("Mod not found"))?;
+
+    // Get modlists via association table
+    let modlists = mod_item
+        .get_associated_modlists(&conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    // Compute mod counts for each modlist
+    let modlists_with_counts: Vec<_> = modlists
+        .iter()
+        .map(|modlist| {
+            let mods_total = modlist.count_mods_total(&conn).unwrap_or(0);
+            let mods_available = modlist.count_mods_available(&conn).unwrap_or(0);
+            (modlist, mods_total, mods_available)
+        })
+        .collect();
+
+    // Get mods with the same filename (excluding current mod)
+    let mods_same_filename = Mod::get_by_filename_all(&mod_item.filename, mod_item.id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    // Get mods with the same name (excluding current mod, only if name exists)
+    let mods_same_name = if let Some(ref name) = mod_item.name {
+        Mod::get_by_name_all(name, mod_item.id, &conn)
+            .map_err(actix_web::error::ErrorInternalServerError)?
+    } else {
+        Vec::new()
+    };
+
+    let page = html! {
+        (maud::DOCTYPE)
+        html {
+            head {
+                meta charset="utf-8";
+                meta name="viewport" content="width=device-width, initial-scale=1";
+                title {
+                    @if let Some(ref name) = mod_item.name {
+                        (name.clone())
+                    } @else {
+                        (mod_item.filename.clone())
+                    }
+                    " - Mod Details"
+                }
+                link rel="stylesheet" href="/res/styles.css";
+            }
+            body.page-details {
+                div.container {
+                    div.header {
+                        a.back-link href="/" { "← Back to Modlists" }
+                        h1 {
+                            @if let Some(ref name) = mod_item.name {
+                                (name.clone())
+                            } @else {
+                                (mod_item.filename.clone())
+                            }
+                        }
+                        div.metadata {
+                            p { strong { "ID: " } (mod_item.id) }
+                            p { strong { "Filename: " } (mod_item.filename.clone()) }
+                            @if let Some(ref name) = mod_item.name {
+                                p { strong { "Name: " } (name.clone()) }
+                            }
+                            @if let Some(ref version) = mod_item.version {
+                                p { strong { "Version: " } (version.clone()) }
+                            }
+                            p { strong { "Size: " } (format_size(mod_item.size)) }
+                            p { strong { "Hash: " } (format_hash(&mod_item.xxhash64)) }
+                            p {
+                                strong { "Status: " }
+                                @if mod_item.available {
+                                    span.status-badge.available { "Available" }
+                                } @else {
+                                    span.status-badge.unavailable { "Unavailable" }
+                                }
+                            }
+                        }
+                    }
+
+                    h2 { "Conflicts - Mods with Same Filename" }
+                    @if mods_same_filename.is_empty() {
+                        p.empty-state { "No conflicts found." }
+                    } @else {
+                        table.mod-table.mod-table-with-id {
+                            thead {
+                                tr {
+                                    th { "ID" }
+                                    th { "Filename" }
+                                    th { "Name" }
+                                    th { "Version" }
+                                    th { "Size" }
+                                    th { "Hash" }
+                                    th { "Status" }
+                                }
+                            }
+                            tbody {
+                                @for related_mod in &mods_same_filename {
+                                    tr class=(if related_mod.available { "" } else { "unavailable-row" }) {
+                                        td.id { (related_mod.id) }
+                                        td.filename {
+                                            a href=(format!("/mod/{}", related_mod.id)) {
+                                                (related_mod.filename.clone())
+                                            }
+                                        }
+                                        td.name {
+                                            a href=(format!("/mod/{}", related_mod.id)) {
+                                                @if let Some(ref name) = related_mod.name {
+                                                    (name)
+                                                } @else {
+                                                    em { "Unknown" }
+                                                }
+                                            }
+                                        }
+                                        td.version {
+                                            @if let Some(ref version) = related_mod.version {
+                                                (version)
+                                            } @else {
+                                                em { "-" }
+                                            }
+                                        }
+                                        td.size {
+                                            (format_size(related_mod.size))
+                                        }
+                                        td.hash {
+                                            code { (format_hash(&related_mod.xxhash64)) }
+                                        }
+                                        td.status {
+                                            @if related_mod.available {
+                                                span.status-badge.available { "Available" }
+                                            } @else {
+                                                span.status-badge.unavailable { "Unavailable" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    h2 { "Associated Modlists" }
+                    @if modlists_with_counts.is_empty() {
+                        p.empty-state { "This mod is not associated with any modlists." }
+                    } @else {
+                        table.mod-table {
+                            thead {
+                                tr {
+                                    th { "Name" }
+                                    th { "Version" }
+                                    th { "Filename" }
+                                    th { "Size" }
+                                    th { "Hash" }
+                                    th { "Status" }
+                                }
+                            }
+                            tbody {
+                                @for (modlist, mods_total, mods_available) in &modlists_with_counts {
+                                    tr {
+                                        td.name {
+                                            a href=(format!("/modlists/{}", modlist.id)) {
+                                                (modlist.name.clone())
+                                            }
+                                        }
+                                        td.version { (modlist.version.clone()) }
+                                        td.filename { (modlist.filename.clone()) }
+                                        td.size { (format_size(modlist.size)) }
+                                        td.hash {
+                                            code { (format_hash(&modlist.xxhash64)) }
+                                        }
+                                        td.status {
+                                            @if *mods_total == 0 || *mods_available == *mods_total {
+                                                span.status-badge.available { "Ready" }
+                                            } @else {
+                                                span.status-badge.missing { "Missing files" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    @if mod_item.name.is_some() {
+                        h2 { "Other Versions - Mods with Same Name" }
+                        @if mods_same_name.is_empty() {
+                            p.empty-state { "No other versions found." }
+                        } @else {
+                            table.mod-table.mod-table-with-id {
+                                thead {
+                                    tr {
+                                        th { "ID" }
+                                        th { "Filename" }
+                                        th { "Name" }
+                                        th { "Version" }
+                                        th { "Size" }
+                                        th { "Hash" }
+                                        th { "Status" }
+                                    }
+                                }
+                                tbody {
+                                    @for related_mod in &mods_same_name {
+                                        tr class=(if related_mod.available { "" } else { "unavailable-row" }) {
+                                            td.id { (related_mod.id) }
+                                            td.filename {
+                                                a href=(format!("/mod/{}", related_mod.id)) {
+                                                    (related_mod.filename.clone())
+                                                }
+                                            }
+                                            td.name {
+                                                a href=(format!("/mod/{}", related_mod.id)) {
+                                                    @if let Some(ref name) = related_mod.name {
+                                                        (name)
+                                                    } @else {
+                                                        em { "Unknown" }
+                                                    }
+                                                }
+                                            }
+                                            td.version {
+                                                @if let Some(ref version) = related_mod.version {
+                                                    (version)
+                                                } @else {
+                                                    em { "-" }
+                                                }
+                                            }
+                                            td.size {
+                                                (format_size(related_mod.size))
+                                            }
+                                            td.hash {
+                                                code { (format_hash(&related_mod.xxhash64)) }
+                                            }
+                                            td.status {
+                                                @if related_mod.available {
+                                                    span.status-badge.available { "Available" }
+                                                } @else {
+                                                    span.status-badge.unavailable { "Unavailable" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(page.into_string()))
+}
+
 #[get("/modlists/{id}")]
 pub async fn details_page(
     id: web::Path<u64>,
@@ -90,12 +353,18 @@ pub async fn details_page(
                             tbody {
                                 @for mod_item in &unavailable_mods {
                                     tr {
-                                        td.filename { (mod_item.filename.clone()) }
+                                        td.filename {
+                                            a href=(format!("/mod/{}", mod_item.id)) {
+                                                (mod_item.filename.clone())
+                                            }
+                                        }
                                         td.name {
-                                            @if let Some(ref name) = mod_item.name {
-                                                (name)
-                                            } @else {
-                                                em { "Unknown" }
+                                            a href=(format!("/mod/{}", mod_item.id)) {
+                                                @if let Some(ref name) = mod_item.name {
+                                                    (name)
+                                                } @else {
+                                                    em { "Unknown" }
+                                                }
                                             }
                                         }
                                         td.version {
@@ -138,12 +407,18 @@ pub async fn details_page(
                             tbody {
                                 @for mod_item in &mods {
                                     tr {
-                                        td.filename { (mod_item.filename.clone()) }
+                                        td.filename {
+                                            a href=(format!("/mod/{}", mod_item.id)) {
+                                                (mod_item.filename.clone())
+                                            }
+                                        }
                                         td.name {
-                                            @if let Some(ref name) = mod_item.name {
-                                                (name)
-                                            } @else {
-                                                em { "Unknown" }
+                                            a href=(format!("/mod/{}", mod_item.id)) {
+                                                @if let Some(ref name) = mod_item.name {
+                                                    (name)
+                                                } @else {
+                                                    em { "Unknown" }
+                                                }
                                             }
                                         }
                                         td.version {

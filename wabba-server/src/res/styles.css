@@ -16,11 +16,38 @@
     padding: 2rem;
   }
 
-  h1 {
+  .header-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 1.5rem;
+  }
+
+  h1 {
+    margin: 0;
     color: #2c3e50;
     font-size: 1.75rem;
     font-weight: 600;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .nav-link {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background-color: #3498db;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-weight: 500;
+    transition: background-color 0.2s;
+
+    &:hover {
+      background-color: #2980b9;
+    }
   }
 
   .empty-state {
@@ -63,6 +90,19 @@
       &:nth-child(6) { width: 8%; }   /* Mods total */
       &:nth-child(7) { width: 8%; }   /* Mods available */
       &:nth-child(8) { width: 17%; }   /* Status */
+    }
+
+    /* Mods table variant - 7 columns: Filename, Name, Version, Size, Hash, Modlists, Status */
+    &.mods-table {
+      th {
+        &:nth-child(1) { width: 20%; }  /* Filename */
+        &:nth-child(2) { width: 25%; }   /* Name */
+        &:nth-child(3) { width: 10%; }   /* Version */
+        &:nth-child(4) { width: 10%; }   /* Size */
+        &:nth-child(5) { width: 18%; }   /* Hash */
+        &:nth-child(6) { width: 7%; }    /* Modlists */
+        &:nth-child(7) { width: 10%; }   /* Status */
+      }
     }
 
     tbody tr {
@@ -142,6 +182,106 @@
     &.missing {
       background-color: #f8d7da;
       color: #721c24;
+    }
+  }
+
+  .upload-section {
+    margin-top: 2rem;
+    padding: 2rem;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+    h2 {
+      margin: 0 0 1.5rem 0;
+      color: #2c3e50;
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+
+      label {
+        display: block;
+        margin-bottom: 0.5rem;
+        color: #333;
+        font-weight: 500;
+      }
+
+      input[type="file"] {
+        width: 100%;
+        padding: 0.75rem;
+        border: 2px solid #e0e0e0;
+        border-radius: 4px;
+        font-size: 1rem;
+        transition: border-color 0.2s;
+
+        &:focus {
+          outline: none;
+          border-color: #3498db;
+        }
+      }
+    }
+
+    .upload-button {
+      padding: 0.75rem 2rem;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+
+      &:hover {
+        background-color: #2980b9;
+      }
+
+      &:disabled {
+        background-color: #95a5a6;
+        cursor: not-allowed;
+      }
+    }
+
+    #status {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 4px;
+
+      p {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+    }
+
+    .success-message {
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      background-color: #d4edda;
+      border: 1px solid #c3e6cb;
+      border-radius: 4px;
+      color: #155724;
+
+      p {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+    }
+
+    .error-message {
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      background-color: #f8d7da;
+      border: 1px solid #f5c6cb;
+      border-radius: 4px;
+      color: #721c24;
+
+      p {
+        margin: 0;
+        font-size: 0.95rem;
+      }
     }
   }
 
@@ -293,6 +433,38 @@
       &:nth-child(4) { width: 10%; }   /* Size */
       &:nth-child(5) { width: 23%; }   /* Hash */
       &:nth-child(6) { width: 16%; }   /* Status */
+    }
+
+    &.mod-table-with-id {
+      th {
+        &:nth-child(1) { width: 8%; }   /* ID */
+        &:nth-child(2) { width: 16%; }  /* Filename */
+        &:nth-child(3) { width: 20%; }   /* Name */
+        &:nth-child(4) { width: 9%; }    /* Version */
+        &:nth-child(5) { width: 9%; }   /* Size */
+        &:nth-child(6) { width: 22%; }  /* Hash */
+        &:nth-child(7) { width: 16%; }  /* Status */
+      }
+
+      td {
+        &.id {
+          font-family: 'Courier New', monospace;
+          font-size: 0.85rem;
+          color: #666;
+        }
+
+        &.name a {
+          color: #3498db;
+          text-decoration: none;
+          font-weight: 500;
+          transition: color 0.2s;
+
+          &:hover {
+            color: #2980b9;
+            text-decoration: underline;
+          }
+        }
+      }
     }
 
     tbody tr {

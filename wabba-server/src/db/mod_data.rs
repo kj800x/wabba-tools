@@ -68,6 +68,42 @@ impl Mod {
         Ok(archive)
     }
 
+    pub fn get_by_id(
+        id: u64,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Option<Self>, rusqlite::Error> {
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM \"mod\" WHERE id = ?1")?
+            .query_row(params![id], |row| {
+                Ok(Mod::from_row(row))
+            })
+            .optional()?
+            .transpose()?;
+
+        Ok(archive)
+    }
+
+    pub fn get_all(
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Vec<Self>, rusqlite::Error> {
+        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM \"mod\" ORDER BY filename")?;
+        let mods = stmt
+            .query_map([], |row| Ok(Mod::from_row(row)?))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(mods)
+    }
+
+    pub fn get_unavailable(
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Vec<Self>, rusqlite::Error> {
+        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM \"mod\" WHERE available = FALSE ORDER BY filename")?;
+        let mods = stmt
+            .query_map([], |row| Ok(Mod::from_row(row)?))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(mods)
+    }
+
     pub fn get_by_modlist_id(
         modlist_id: u64,
         conn: &PooledConnection<SqliteConnectionManager>,
@@ -115,6 +151,71 @@ impl Mod {
             .execute(params![modlist.id, self.id])?;
 
         Ok(())
+    }
+
+    pub fn get_associated_modlists(
+        &self,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Vec<Modlist>, rusqlite::Error> {
+        let mut stmt = conn.prepare(
+            "SELECT modlist.id, modlist.filename, modlist.name, modlist.version, modlist.size, modlist.xxhash64, modlist.available
+             FROM modlist
+             INNER JOIN mod_association ON modlist.id = mod_association.modlist_id
+             WHERE mod_association.mod_id = ?1
+             ORDER BY modlist.name"
+        )?;
+        let modlists = stmt
+            .query_map(params![self.id], |row| Ok(Modlist::from_row(row)?))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(modlists)
+    }
+
+    pub fn count_modlists(
+        &self,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<u64, rusqlite::Error> {
+        let count: i64 = conn
+            .prepare("SELECT COUNT(*) FROM mod_association WHERE mod_id = ?1")?
+            .query_row(params![self.id], |row| row.get(0))?;
+
+        Ok(count as u64)
+    }
+
+    pub fn get_by_filename_all(
+        filename: &str,
+        exclude_id: u64,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Vec<Self>, rusqlite::Error> {
+        let mut stmt = conn.prepare(
+            "SELECT id, filename, name, version, size, xxhash64, available
+             FROM \"mod\"
+             WHERE filename = ?1 AND id != ?2
+             ORDER BY id",
+        )?;
+        let mods = stmt
+            .query_map(params![filename, exclude_id], |row| Ok(Mod::from_row(row)?))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(mods)
+    }
+
+    pub fn get_by_name_all(
+        name: &str,
+        exclude_id: u64,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Vec<Self>, rusqlite::Error> {
+        let mut stmt = conn.prepare(
+            "SELECT id, filename, name, version, size, xxhash64, available
+             FROM \"mod\"
+             WHERE name = ?1 AND id != ?2
+             ORDER BY id",
+        )?;
+        let mods = stmt
+            .query_map(params![name, exclude_id], |row| Ok(Mod::from_row(row)?))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(mods)
     }
 }
 

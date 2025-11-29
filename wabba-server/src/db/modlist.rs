@@ -68,7 +68,7 @@ impl Modlist {
     pub fn get_all(
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
-        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist ORDER BY name")?;
+        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist ORDER BY name, version DESC")?;
         let archives = stmt
             .query_map([], |row| Ok(Modlist::from_row(row)?))?
             .collect::<Result<Vec<_>, _>>()?;
