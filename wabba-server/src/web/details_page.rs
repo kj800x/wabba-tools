@@ -31,6 +31,10 @@ fn format_hash(hash: &str) -> String {
     }
 }
 
+fn nexus_game_url_slug(game_name: &str) -> String {
+    game_name.to_lowercase().replace(" ", "")
+}
+
 fn render_source(source: &ArchiveState) -> maud::Markup {
     html! {
         @match source {
@@ -46,6 +50,7 @@ fn render_source(source: &ArchiveState) -> maud::Markup {
                 is_nsfw,
                 ..
             } => {
+                @let game_slug = nexus_game_url_slug(game_name);
                 div.source-info {
                     div.source-header {
                         span.source-type { "Nexus Mods" }
@@ -55,7 +60,9 @@ fn render_source(source: &ArchiveState) -> maud::Markup {
                     }
                     @if let Some(img_url) = image_url {
                         div.source-image {
-                            img src=(img_url) alt="Mod image" {}
+                            a href=(format!("https://www.nexusmods.com/{}/mods/{}", game_slug, mod_id)) target="_blank" {
+                                img src=(img_url) alt="Mod image" {}
+                            }
                         }
                     }
                     div.source-details {
@@ -67,7 +74,9 @@ fn render_source(source: &ArchiveState) -> maud::Markup {
                         }
                         div.source-field {
                             strong { "Name: " }
-                            (name)
+                            a href=(format!("https://www.nexusmods.com/{}/mods/{}", game_slug, mod_id)) target="_blank" {
+                                (name)
+                            }
                         }
                         div.source-field {
                             strong { "Version: " }
@@ -79,11 +88,15 @@ fn render_source(source: &ArchiveState) -> maud::Markup {
                         }
                         div.source-field {
                             strong { "Mod ID: " }
-                            code { (mod_id) }
+                            a href=(format!("https://www.nexusmods.com/{}/mods/{}", game_slug, mod_id)) target="_blank" {
+                                code { (mod_id) }
+                            }
                         }
                         div.source-field {
                             strong { "File ID: " }
-                            code { (file_id) }
+                            a href=(format!("https://www.nexusmods.com/{}/mods/{}?tab=files&file_id={}", game_slug, mod_id, file_id)) target="_blank" {
+                                code { (file_id) }
+                            }
                         }
                         @if !description.is_empty() {
                             div.source-field {
