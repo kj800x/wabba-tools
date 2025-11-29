@@ -5,6 +5,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::db::mod_data::Mod;
 use crate::db::modlist::Modlist;
+use wabba_protocol::archive_state::ArchiveState;
 
 fn format_size(bytes: u64) -> String {
     const KB: u64 = 1024;
@@ -27,6 +28,264 @@ fn format_hash(hash: &str) -> String {
         format!("{}...", &hash[..16])
     } else {
         hash.to_string()
+    }
+}
+
+fn render_source(source: &ArchiveState) -> maud::Markup {
+    html! {
+        @match source {
+            ArchiveState::NexusDownloader {
+                name,
+                mod_id,
+                file_id,
+                game_name,
+                author,
+                description,
+                version,
+                image_url,
+                is_nsfw,
+                ..
+            } => {
+                div.source-info {
+                    div.source-header {
+                        span.source-type { "Nexus Mods" }
+                        @if *is_nsfw {
+                            span.nsfw-badge { "NSFW" }
+                        }
+                    }
+                    @if let Some(img_url) = image_url {
+                        div.source-image {
+                            img src=(img_url) alt="Mod image" {}
+                        }
+                    }
+                    div.source-details {
+                        @if let Some(author_name) = author {
+                            div.source-field {
+                                strong { "Author: " }
+                                (author_name)
+                            }
+                        }
+                        div.source-field {
+                            strong { "Name: " }
+                            (name)
+                        }
+                        div.source-field {
+                            strong { "Version: " }
+                            (version)
+                        }
+                        div.source-field {
+                            strong { "Game: " }
+                            (game_name)
+                        }
+                        div.source-field {
+                            strong { "Mod ID: " }
+                            code { (mod_id) }
+                        }
+                        div.source-field {
+                            strong { "File ID: " }
+                            code { (file_id) }
+                        }
+                        @if !description.is_empty() {
+                            div.source-field {
+                                strong { "Description: " }
+                                p.source-description { (description) }
+                            }
+                        }
+                    }
+                }
+            }
+            ArchiveState::HttpDownloader { url, headers } => {
+                div.source-info {
+                    div.source-header {
+                        span.source-type { "HTTP Download" }
+                    }
+                    div.source-details {
+                        div.source-field {
+                            strong { "URL: " }
+                            a href=(url) target="_blank" { (url) }
+                        }
+                        @if !headers.is_null() {
+                            div.source-field {
+                                strong { "Headers: " }
+                                code.source-headers {
+                                    (serde_json::to_string_pretty(headers).unwrap_or_default())
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            ArchiveState::WabbajackCDNDownloader { url } => {
+                div.source-info {
+                    div.source-header {
+                        span.source-type { "Wabbajack CDN" }
+                    }
+                    div.source-details {
+                        div.source-field {
+                            strong { "URL: " }
+                            a href=(url) target="_blank" { (url) }
+                        }
+                    }
+                }
+            }
+            ArchiveState::ManualDownloader { url, prompt } => {
+                div.source-info {
+                    div.source-header {
+                        span.source-type { "Manual Download" }
+                    }
+                    div.source-details {
+                        div.source-field {
+                            strong { "URL: " }
+                            a href=(url) target="_blank" { (url) }
+                        }
+                        div.source-field {
+                            strong { "Prompt: " }
+                            (prompt)
+                        }
+                    }
+                }
+            }
+            ArchiveState::MegaDownloader { url } => {
+                div.source-info {
+                    div.source-header {
+                        span.source-type { "MEGA" }
+                    }
+                    div.source-details {
+                        div.source-field {
+                            strong { "URL: " }
+                            a href=(url) target="_blank" { (url) }
+                        }
+                    }
+                }
+            }
+            ArchiveState::GoogleDriveDownloader { id } => {
+                div.source-info {
+                    div.source-header {
+                        span.source-type { "Google Drive" }
+                    }
+                    div.source-details {
+                        div.source-field {
+                            strong { "File ID: " }
+                            code { (id) }
+                        }
+                    }
+                }
+            }
+            ArchiveState::MediaFireDownloader { url } => {
+                div.source-info {
+                    div.source-header {
+                        span.source-type { "MediaFire" }
+                    }
+                    div.source-details {
+                        div.source-field {
+                            strong { "URL: " }
+                            a href=(url) target="_blank" { (url) }
+                        }
+                    }
+                }
+            }
+            ArchiveState::LoversLabOAuthDownloader {
+                name,
+                ips4_mod,
+                url,
+                author,
+                description,
+                version,
+                image_url,
+                is_nsfw,
+                ..
+            } => {
+                div.source-info {
+                    div.source-header {
+                        span.source-type { "LoversLab" }
+                        @if *is_nsfw {
+                            span.nsfw-badge { "NSFW" }
+                        }
+                    }
+                    @if let Some(img_url) = image_url {
+                        div.source-image {
+                            img src=(img_url) alt="Mod image" {}
+                        }
+                    }
+                    div.source-details {
+                        @if let Some(author_name) = author {
+                            div.source-field {
+                                strong { "Author: " }
+                                (author_name)
+                            }
+                        }
+                        @if let Some(mod_name) = name {
+                            div.source-field {
+                                strong { "Name: " }
+                                (mod_name)
+                            }
+                        }
+                        @if let Some(mod_version) = version {
+                            div.source-field {
+                                strong { "Version: " }
+                                (mod_version)
+                            }
+                        }
+                        div.source-field {
+                            strong { "Mod ID: " }
+                            code { (ips4_mod) }
+                        }
+                        div.source-field {
+                            strong { "URL: " }
+                            a href=(url) target="_blank" { (url) }
+                        }
+                        @if let Some(desc) = description {
+                            @if !desc.is_empty() {
+                                div.source-field {
+                                    strong { "Description: " }
+                                    p.source-description { (desc) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            ArchiveState::GameFileSourceDownloader {
+                game,
+                game_file,
+                game_version,
+                hash,
+            } => {
+                div.source-info {
+                    div.source-header {
+                        span.source-type { "Game File" }
+                    }
+                    div.source-details {
+                        div.source-field {
+                            strong { "Game: " }
+                            (game)
+                        }
+                        div.source-field {
+                            strong { "File: " }
+                            code { (game_file) }
+                        }
+                        div.source-field {
+                            strong { "Game Version: " }
+                            (game_version)
+                        }
+                        div.source-field {
+                            strong { "Hash: " }
+                            code { (hash) }
+                        }
+                    }
+                }
+            }
+            ArchiveState::UnknownDownloader => {
+                div.source-info {
+                    div.source-header {
+                        span.source-type { "Unknown Source" }
+                    }
+                    div.source-details {
+                        p { "Source type is not recognized or not available." }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -117,6 +376,13 @@ pub async fn mod_details_page(
                                     span.status-badge.unavailable { "Unavailable" }
                                 }
                             }
+                        }
+                    }
+
+                    @if let Some(ref source) = mod_item.source {
+                        h2 { "Source" }
+                        div.source-section {
+                            (render_source(source))
                         }
                     }
 
