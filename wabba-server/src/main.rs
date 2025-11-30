@@ -34,9 +34,9 @@ use crate::db::migrations::migrate;
 use crate::prelude::*;
 use crate::resources::bootstrap::{bootstrap, bootstrap_modlists, bootstrap_mods};
 use crate::resources::{hello_world, upload_mod, upload_modlist};
-use crate::web::details_page::{details_page, mod_details_page};
+use crate::web::details_page::{details_page, mod_details_page, mod_image};
 use crate::web::listing_page::{listing_page, mods_listing_page};
-use crate::web::upload_page::{upload_mod_page, upload_mod_page_post};
+// use crate::web::upload_page::{upload_mod_page, upload_mod_page_post};
 use wabba_server::serve_static_file;
 
 async fn start_http(
@@ -58,16 +58,16 @@ async fn start_http(
             .service(hello_world)
             .service(upload_modlist)
             .service(upload_mod)
-            .service(upload_mod_page_post)
             .service(listing_page)
             .service(mods_listing_page)
-            .service(upload_mod_page)
-            .service(upload_mod_page_post)
             .service(details_page)
             .service(mod_details_page)
+            .service(mod_image)
             .service(bootstrap)
             .service(bootstrap_modlists)
             .service(bootstrap_mods)
+            // .service(upload_mod_page)
+            // .service(upload_mod_page_post)
             .service(serve_static_file!("htmx.min.js"))
             .service(serve_static_file!("idiomorph.min.js"))
             .service(serve_static_file!("idiomorph-ext.min.js"))

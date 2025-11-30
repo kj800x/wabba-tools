@@ -3,6 +3,7 @@ use maud::html;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
+use crate::db::mod_association::ModAssociation;
 use crate::db::mod_data::Mod;
 use crate::db::modlist::Modlist;
 
@@ -159,12 +160,16 @@ pub async fn mods_listing_page(
         Mod::get_all(&conn).map_err(actix_web::error::ErrorInternalServerError)?
     };
 
-    // Compute modlist counts for each mod
-    let mods_with_counts: Vec<_> = mods
+    // Get associations for all mods to display modlist-specific metadata
+    // For the listing, we'll use the first association's metadata (if any)
+    let mods_with_metadata: Vec<_> = mods
         .iter()
         .map(|mod_item| {
             let modlists_count = mod_item.count_modlists(&conn).unwrap_or(0);
-            (mod_item, modlists_count)
+            let associations =
+                ModAssociation::get_by_mod_id(mod_item.id, &conn).unwrap_or_default();
+            let first_assoc = associations.first().cloned();
+            (mod_item, modlists_count, first_assoc)
         })
         .collect();
 
@@ -202,7 +207,7 @@ pub async fn mods_listing_page(
                             }
                         }
                     }
-                    @if mods_with_counts.is_empty() {
+                    @if mods_with_metadata.is_empty() {
                         p.empty-state {
                             @if show_unavailable_only {
                                 "No missing mods found."
@@ -224,27 +229,61 @@ pub async fn mods_listing_page(
                                 }
                             }
                             tbody {
-                                @for (mod_item, modlists_count) in &mods_with_counts {
+                                @for (mod_item, modlists_count, first_assoc) in &mods_with_metadata {
                                     tr {
                                         td.filename {
                                             a href=(format!("/mod/{}", mod_item.id)) {
-                                                (mod_item.filename.clone())
+                                                @match &mod_item.disk_filename {
+                                                    Some(disk_filename) => {
+                                                        (disk_filename)
+                                                    }
+                                                    None => {
+                                                        @match first_assoc {
+                                                            Some(assoc) => {
+                                                                (assoc.filename.clone())
+                                                            }
+                                                            None => {
+                                                                em { "Unknown" }
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                         td.name {
                                             a href=(format!("/mod/{}", mod_item.id)) {
-                                                @if let Some(ref name) = mod_item.name {
-                                                    (name)
-                                                } @else {
-                                                    em { "Unknown" }
+                                                @match first_assoc {
+                                                    Some(assoc) => {
+                                                        @match &assoc.name {
+                                                            Some(name) => {
+                                                                (name.clone())
+                                                            }
+                                                            None => {
+                                                                em { "Unknown" }
+                                                            }
+                                                        }
+                                                    }
+                                                    None => {
+                                                        em { "Unknown" }
+                                                    }
                                                 }
                                             }
                                         }
                                         td.version {
-                                            @if let Some(ref version) = mod_item.version {
-                                                (version)
-                                            } @else {
-                                                em { "-" }
+                                            @match first_assoc {
+                                                Some(assoc) => {
+                                                    @match &assoc.version {
+                                                        Some(version) => {
+                                                            (version.clone())
+                                                        }
+                                                        None => {
+                                                            em { "-" }
+                                                        }
+                                                    }
+                                                }
+                                                None => {
+                                                    em { "-" }
+                                                }
                                             }
                                         }
                                         td.size { (format_size(mod_item.size)) }
@@ -253,7 +292,7 @@ pub async fn mods_listing_page(
                                         }
                                         td { (modlists_count) }
                                         td.status {
-                                            @if mod_item.available {
+                                            @if mod_item.is_available() {
                                                 span.status-badge.available { "Available" }
                                             } @else {
                                                 span.status-badge.unavailable { "Unavailable" }

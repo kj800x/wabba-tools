@@ -5,6 +5,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use wabba_protocol::wabbajack::WabbajackMetadata;
 
 use crate::db::{
+    mod_association::{ModAssociation, ModAssociationEgg},
     mod_data::{Mod, ModEgg},
     modlist::{Modlist, ModlistEgg},
 };
@@ -15,29 +16,25 @@ pub fn ingest_mod(
     path: &Path,
     conn: &PooledConnection<SqliteConnectionManager>,
 ) -> Result<(), actix_web::Error> {
+    let size = std::fs::metadata(&path).unwrap().len() as u64;
+
     // Check if file was in DB but unavailable - if so, mark as available; otherwise create new
-    match Mod::get_by_filename_and_hash(&filename, &hash, &conn)
+    match Mod::get_by_size_and_hash(size, hash, &conn)
         .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)))?
     {
         Some(stored_mod) => {
-            log::info!("Mod present in db, marking as available");
-            stored_mod.mark_available(&conn).map_err(|e| {
+            log::info!("Mod present in db, setting disk filename");
+            stored_mod.set_disk_filename(filename, &conn).map_err(|e| {
                 actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
             })?;
         }
 
         None => {
             log::info!("Mod not found in db, creating new one");
-            let size = std::fs::metadata(&path).unwrap().len() as u64;
-
             let mod_egg = ModEgg {
-                filename: filename.to_string(),
-                name: None,
-                version: None,
+                disk_filename: Some(filename.to_string()),
                 xxhash64: hash.to_string(),
                 size: size,
-                source: None,
-                available: true,
             };
 
             mod_egg.create(&conn).map_err(|e| {
@@ -101,63 +98,18 @@ pub fn ingest_modlist(
 
     // Associate required mods
     for archive in metadata.required_archives() {
-        let mod_to_associate = match Mod::get_by_filename_and_hash(
-            &archive.filename,
-            &archive.hash,
-            &conn,
-        )
-        .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)))?
-        {
-            Some(existing_mod) => {
-                // // Verify filename, size, and hash match
-                // if existing_mod.filename != archive.filename {
-                //     return Err(actix_web::error::ErrorInternalServerError(format!(
-                //         "Hash collision detected: filename {} exists with hash {} but metadata specifies filename {}",
-                //         existing_mod.filename, existing_mod.xxhash64, archive.filename
-                //     )));
-                // }
-                if existing_mod.size != archive.size {
-                    return Err(actix_web::error::ErrorInternalServerError(format!(
-                        "Size mismatch for filename {}: database has {} but metadata specifies {}",
-                        archive.filename, existing_mod.size, archive.size
-                    )));
-                }
-                // if existing_mod.xxhash64 != archive.hash {
-                //     return Err(actix_web::error::ErrorInternalServerError(format!(
-                //         "Hash mismatch for filename {}: database has {} but metadata specifies {}",
-                //         existing_mod.filename, existing_mod.xxhash64, archive.hash
-                //     )));
-                // }
-
-                // Enrich name and version from metadata, keep existing available status
-                let updated_mod = Mod {
-                    id: existing_mod.id,
-                    filename: existing_mod.filename.clone(),
-                    name: existing_mod.name.or(archive.name()),
-                    version: existing_mod.version.or(archive.version()),
-                    xxhash64: existing_mod.xxhash64.clone(),
-                    size: existing_mod.size,
-                    source: existing_mod.source.or(Some(archive.state.clone())),
-                    available: existing_mod.available,
-                };
-
-                updated_mod.update(&conn).map_err(|e| {
-                    actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
-                })?;
-
-                log::info!("Reusing existing mod: {:#?}", updated_mod);
-                updated_mod
-            }
+        // Find or create the Mod entry (unique file identified by size + hash)
+        let mod_to_associate = match Mod::get_by_size_and_hash(archive.size, &archive.hash, &conn)
+            .map_err(|e| {
+            actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+        })? {
+            Some(existing_mod) => existing_mod,
             None => {
                 // Create new mod entry
                 let mod_egg = ModEgg {
-                    filename: archive.filename.clone(),
-                    name: archive.name(),
-                    version: archive.version(),
+                    disk_filename: None,
                     xxhash64: archive.hash.clone(),
                     size: archive.size,
-                    source: Some(archive.state.clone()),
-                    available: false,
                 };
 
                 let created_mod = mod_egg.create(&conn).map_err(|e| {
@@ -169,9 +121,40 @@ pub fn ingest_modlist(
             }
         };
 
-        mod_to_associate.associate(&modlist, &conn).map_err(|e| {
-            actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
-        })?;
+        // Create or update the ModAssociation with modlist-specific metadata
+        // Check if association already exists
+        match ModAssociation::get_by_modlist_and_mod(modlist.id, mod_to_associate.id, &conn)
+            .map_err(|e| {
+                actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+            })? {
+            Some(mut existing_assoc) => {
+                // Update existing association with latest metadata
+                existing_assoc.source = archive.state.clone();
+                existing_assoc.filename = archive.filename.clone();
+                existing_assoc.name = archive.name();
+                existing_assoc.version = archive.version();
+                existing_assoc.update(&conn).map_err(|e| {
+                    actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+                })?;
+                log::info!("Updated mod association: {:#?}", existing_assoc);
+            }
+            None => {
+                let association_egg = ModAssociationEgg {
+                    modlist_id: modlist.id,
+                    mod_id: mod_to_associate.id,
+                    source: archive.state.clone(),
+                    filename: archive.filename.clone(),
+                    name: archive.name(),
+                    version: archive.version(),
+                };
+
+                // Create new association
+                association_egg.create(&conn).map_err(|e| {
+                    actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+                })?;
+                log::info!("Created new mod association");
+            }
+        }
     }
 
     Ok(())

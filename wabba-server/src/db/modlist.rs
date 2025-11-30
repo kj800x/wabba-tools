@@ -3,6 +3,8 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
+use crate::db::mod_association::ModAssociation;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Modlist {
     pub id: u64,
@@ -47,6 +49,19 @@ impl Modlist {
         })
         .optional()?
         .transpose()?;
+
+        Ok(archive)
+    }
+
+    pub fn get_by_hash(
+        hash: &str,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Option<Self>, rusqlite::Error> {
+        let archive = conn
+            .prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist WHERE xxhash64 = ?1")?
+            .query_row(params![hash], |row| Ok(Modlist::from_row(row)))
+            .optional()?
+            .transpose()?;
 
         Ok(archive)
     }
@@ -105,11 +120,18 @@ impl Modlist {
             .prepare(
                 "SELECT COUNT(*) FROM mod_association
              INNER JOIN \"mod\" ON mod_association.mod_id = \"mod\".id
-             WHERE mod_association.modlist_id = ?1 AND \"mod\".available = TRUE",
+             WHERE mod_association.modlist_id = ?1 AND \"mod\".disk_filename IS NOT NULL",
             )?
             .query_row(params![self.id], |row| row.get(0))?;
 
         Ok(count as u64)
+    }
+
+    pub fn get_mod_associations(
+        &self,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Vec<ModAssociation>, rusqlite::Error> {
+        ModAssociation::get_by_modlist_id(self.id, conn)
     }
 }
 

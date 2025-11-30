@@ -3,6 +3,7 @@ use maud::html;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
+use crate::db::mod_association::ModAssociation;
 use crate::db::mod_data::Mod;
 use crate::db::modlist::Modlist;
 use wabba_protocol::archive_state::ArchiveState;
@@ -35,7 +36,7 @@ fn nexus_game_url_slug(game_name: &str) -> String {
     game_name.to_lowercase().replace(" ", "")
 }
 
-fn render_source(source: &ArchiveState) -> maud::Markup {
+fn render_source(source: &ArchiveState, mod_id: u64) -> maud::Markup {
     html! {
         @match source {
             ArchiveState::NexusDownloader {
@@ -215,9 +216,11 @@ fn render_source(source: &ArchiveState) -> maud::Markup {
                             span.nsfw-badge { "NSFW" }
                         }
                     }
-                    @if let Some(img_url) = image_url {
+                    @if image_url.is_some() {
                         div.source-image {
-                            img src=(img_url) alt="Mod image" {}
+                            a href=(url) target="_blank" {
+                                img src=(format!("/mod-image/{}", mod_id)) alt="Mod image" {}
+                            }
                         }
                     }
                     div.source-details {
@@ -316,6 +319,10 @@ pub async fn mod_details_page(
         .map_err(actix_web::error::ErrorInternalServerError)?
         .ok_or_else(|| actix_web::error::ErrorNotFound("Mod not found"))?;
 
+    // Get all associations for this mod
+    let associations = ModAssociation::get_by_mod_id(mod_id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
     // Get modlists via association table
     let modlists = mod_item
         .get_associated_modlists(&conn)
@@ -331,14 +338,48 @@ pub async fn mod_details_page(
         })
         .collect();
 
-    // Get mods with the same filename (excluding current mod)
-    let mods_same_filename = Mod::get_by_filename_all(&mod_item.filename, mod_item.id, &conn)
-        .map_err(actix_web::error::ErrorInternalServerError)?;
+    // Get primary association (first one) for display purposes
+    let primary_assoc = associations.first();
 
-    // Get mods with the same name (excluding current mod, only if name exists)
-    let mods_same_name = if let Some(ref name) = mod_item.name {
-        Mod::get_by_name_all(name, mod_item.id, &conn)
+    // Get mods with the same disk filename (excluding current mod)
+    let mods_same_filename = if let Some(ref disk_filename) = mod_item.disk_filename {
+        Mod::get_by_disk_filename_all(disk_filename, mod_item.id, &conn)
             .map_err(actix_web::error::ErrorInternalServerError)?
+    } else {
+        Vec::new()
+    };
+
+    // Get associations for mods with same filename
+    let mut mods_same_filename_with_assocs = Vec::new();
+    for related_mod in &mods_same_filename {
+        let related_assocs = ModAssociation::get_by_mod_id(related_mod.id, &conn)
+            .map_err(actix_web::error::ErrorInternalServerError)?;
+        let related_first_assoc = related_assocs.first().cloned();
+        mods_same_filename_with_assocs.push((related_mod, related_first_assoc));
+    }
+
+    // Get mods with the same name from associations (excluding current mod)
+    let mods_same_name = if let Some(assoc) = primary_assoc {
+        if let Some(ref name) = assoc.name {
+            // Find all mods that have associations with the same name
+            let all_mods =
+                Mod::get_all(&conn).map_err(actix_web::error::ErrorInternalServerError)?;
+            let mut same_name_mods = Vec::new();
+            for other_mod in all_mods {
+                if other_mod.id == mod_id {
+                    continue;
+                }
+                let other_assocs = ModAssociation::get_by_mod_id(other_mod.id, &conn)
+                    .map_err(actix_web::error::ErrorInternalServerError)?;
+                if other_assocs.iter().any(|a| a.name.as_ref() == Some(name)) {
+                    let other_first_assoc = other_assocs.first().cloned();
+                    same_name_mods.push((other_mod, other_first_assoc));
+                }
+            }
+            same_name_mods
+        } else {
+            Vec::new()
+        }
     } else {
         Vec::new()
     };
@@ -350,10 +391,34 @@ pub async fn mod_details_page(
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title {
-                    @if let Some(ref name) = mod_item.name {
-                        (name.clone())
-                    } @else {
-                        (mod_item.filename.clone())
+                    @match primary_assoc {
+                        Some(assoc) => {
+                            @match &assoc.name {
+                                Some(name) => {
+                                    (name.clone())
+                                }
+                                None => {
+                                    @match &mod_item.disk_filename {
+                                        Some(disk_filename) => {
+                                            (disk_filename.clone())
+                                        }
+                                        None => {
+                                            (assoc.filename.clone())
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        None => {
+                            @match &mod_item.disk_filename {
+                                Some(disk_filename) => {
+                                    (disk_filename.clone())
+                                }
+                                None => {
+                                    "Unknown Mod"
+                                }
+                            }
+                        }
                     }
                     " - Mod Details"
                 }
@@ -364,26 +429,63 @@ pub async fn mod_details_page(
                     div.header {
                         a.back-link href="/" { "← Back to Modlists" }
                         h1 {
-                            @if let Some(ref name) = mod_item.name {
-                                (name.clone())
-                            } @else {
-                                (mod_item.filename.clone())
+                            @match primary_assoc {
+                                Some(assoc) => {
+                                    @match &assoc.name {
+                                        Some(name) => {
+                                            (name.clone())
+                                        }
+                                        None => {
+                                            @match &mod_item.disk_filename {
+                                                Some(disk_filename) => {
+                                                    (disk_filename.clone())
+                                                }
+                                                None => {
+                                                    (assoc.filename.clone())
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                None => {
+                                    @match &mod_item.disk_filename {
+                                        Some(disk_filename) => {
+                                            (disk_filename.clone())
+                                        }
+                                        None => {
+                                            "Unknown Mod"
+                                        }
+                                    }
+                                }
                             }
                         }
                         div.metadata {
                             p { strong { "ID: " } (mod_item.id) }
-                            p { strong { "Filename: " } (mod_item.filename.clone()) }
-                            @if let Some(ref name) = mod_item.name {
-                                p { strong { "Name: " } (name.clone()) }
+                            p {
+                                strong { "Disk Filename: " }
+                                @match &mod_item.disk_filename {
+                                    Some(disk_filename) => {
+                                        (disk_filename.clone())
+                                    }
+                                    None => {
+                                        em { "Not available on disk" }
+                                    }
+                                }
                             }
-                            @if let Some(ref version) = mod_item.version {
-                                p { strong { "Version: " } (version.clone()) }
+                            @if let Some(assoc) = primary_assoc {
+                                p { strong { "Modlist Filename: " } (assoc.filename.clone()) }
+                        @if let Some(name) = &assoc.name {
+                            p { strong { "Name: " } (name.clone()) }
+                        }
+                        @if let Some(version) = &assoc.version {
+                            p { strong { "Version: " } (version.clone()) }
+                        }
                             }
                             p { strong { "Size: " } (format_size(mod_item.size)) }
                             p { strong { "Hash: " } (format_hash(&mod_item.xxhash64)) }
                             p {
                                 strong { "Status: " }
-                                @if mod_item.available {
+                                @if mod_item.is_available() {
                                     span.status-badge.available { "Available" }
                                 } @else {
                                     span.status-badge.unavailable { "Unavailable" }
@@ -392,10 +494,10 @@ pub async fn mod_details_page(
                         }
                     }
 
-                    @if let Some(ref source) = mod_item.source {
+                    @if let Some(assoc) = primary_assoc {
                         h2 { "Source" }
                         div.source-section {
-                            (render_source(source))
+                            (render_source(&assoc.source, mod_id))
                         }
                     }
 
@@ -416,28 +518,62 @@ pub async fn mod_details_page(
                                 }
                             }
                             tbody {
-                                @for related_mod in &mods_same_filename {
-                                    tr class=(if related_mod.available { "" } else { "unavailable-row" }) {
+                                @for (related_mod, related_first_assoc) in &mods_same_filename_with_assocs {
+                                    tr class=(if related_mod.is_available() { "" } else { "unavailable-row" }) {
                                         td.id { (related_mod.id) }
                                         td.filename {
                                             a href=(format!("/mod/{}", related_mod.id)) {
-                                                (related_mod.filename.clone())
+                                                @match &related_mod.disk_filename {
+                                                    Some(disk_filename) => {
+                                                        (disk_filename.clone())
+                                                    }
+                                                    None => {
+                                                        @match related_first_assoc {
+                                                            Some(assoc) => {
+                                                                (assoc.filename.clone())
+                                                            }
+                                                            None => {
+                                                                em { "Unknown" }
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                         td.name {
                                             a href=(format!("/mod/{}", related_mod.id)) {
-                                                @if let Some(ref name) = related_mod.name {
-                                                    (name)
-                                                } @else {
-                                                    em { "Unknown" }
+                                                @match related_first_assoc {
+                                                    Some(assoc) => {
+                                                        @match &assoc.name {
+                                                            Some(name) => {
+                                                                (name.clone())
+                                                            }
+                                                            None => {
+                                                                em { "Unknown" }
+                                                            }
+                                                        }
+                                                    }
+                                                    None => {
+                                                        em { "Unknown" }
+                                                    }
                                                 }
                                             }
                                         }
                                         td.version {
-                                            @if let Some(ref version) = related_mod.version {
-                                                (version)
-                                            } @else {
-                                                em { "-" }
+                                            @match related_first_assoc {
+                                                Some(assoc) => {
+                                                    @match &assoc.version {
+                                                        Some(version) => {
+                                                            (version.clone())
+                                                        }
+                                                        None => {
+                                                            em { "-" }
+                                                        }
+                                                    }
+                                                }
+                                                None => {
+                                                    em { "-" }
+                                                }
                                             }
                                         }
                                         td.size {
@@ -447,7 +583,7 @@ pub async fn mod_details_page(
                                             code { (format_hash(&related_mod.xxhash64)) }
                                         }
                                         td.status {
-                                            @if related_mod.available {
+                                            @if related_mod.is_available() {
                                                 span.status-badge.available { "Available" }
                                             } @else {
                                                 span.status-badge.unavailable { "Unavailable" }
@@ -501,7 +637,7 @@ pub async fn mod_details_page(
                         }
                     }
 
-                    @if mod_item.name.is_some() {
+                    @if primary_assoc.is_some_and(|a| a.name.is_some()) {
                         h2 { "Other Versions - Mods with Same Name" }
                         @if mods_same_name.is_empty() {
                             p.empty-state { "No other versions found." }
@@ -518,29 +654,63 @@ pub async fn mod_details_page(
                                         th { "Status" }
                                     }
                                 }
-                                tbody {
-                                    @for related_mod in &mods_same_name {
-                                        tr class=(if related_mod.available { "" } else { "unavailable-row" }) {
+                            tbody {
+                                @for (related_mod, related_first_assoc) in &mods_same_name {
+                                        tr class=(if related_mod.is_available() { "" } else { "unavailable-row" }) {
                                             td.id { (related_mod.id) }
                                             td.filename {
                                                 a href=(format!("/mod/{}", related_mod.id)) {
-                                                    (related_mod.filename.clone())
+                                                    @match &related_mod.disk_filename {
+                                                        Some(disk_filename) => {
+                                                            (disk_filename.clone())
+                                                        }
+                                                        None => {
+                                                            @match related_first_assoc {
+                                                                Some(assoc) => {
+                                                                    (assoc.filename.clone())
+                                                                }
+                                                                None => {
+                                                                    em { "Unknown" }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                             td.name {
                                                 a href=(format!("/mod/{}", related_mod.id)) {
-                                                    @if let Some(ref name) = related_mod.name {
-                                                        (name)
-                                                    } @else {
-                                                        em { "Unknown" }
+                                                    @match related_first_assoc {
+                                                        Some(assoc) => {
+                                                            @match &assoc.name {
+                                                                Some(name) => {
+                                                                    (name.clone())
+                                                                }
+                                                                None => {
+                                                                    em { "Unknown" }
+                                                                }
+                                                            }
+                                                        }
+                                                        None => {
+                                                            em { "Unknown" }
+                                                        }
                                                     }
                                                 }
                                             }
                                             td.version {
-                                                @if let Some(ref version) = related_mod.version {
-                                                    (version)
-                                                } @else {
-                                                    em { "-" }
+                                                @match related_first_assoc {
+                                                    Some(assoc) => {
+                                                        @match &assoc.version {
+                                                            Some(version) => {
+                                                                (version.clone())
+                                                            }
+                                                            None => {
+                                                                em { "-" }
+                                                            }
+                                                        }
+                                                    }
+                                                    None => {
+                                                        em { "-" }
+                                                    }
                                                 }
                                             }
                                             td.size {
@@ -550,7 +720,7 @@ pub async fn mod_details_page(
                                                 code { (format_hash(&related_mod.xxhash64)) }
                                             }
                                             td.status {
-                                                @if related_mod.available {
+                                                @if related_mod.is_available() {
                                                     span.status-badge.available { "Available" }
                                                 } @else {
                                                     span.status-badge.unavailable { "Unavailable" }
@@ -572,6 +742,62 @@ pub async fn mod_details_page(
         .body(page.into_string()))
 }
 
+#[get("/mod-image/{id}")]
+pub async fn mod_image(
+    id: web::Path<u64>,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+) -> Result<impl Responder, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let mod_id = id.into_inner();
+
+    // Get mod associations to find the image URL
+    let associations = ModAssociation::get_by_mod_id(mod_id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    // Find LoversLab association with image_url
+    let image_url = associations
+        .iter()
+        .find_map(|assoc| {
+            if let ArchiveState::LoversLabOAuthDownloader { image_url, .. } = &assoc.source {
+                image_url.as_ref()
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| actix_web::error::ErrorNotFound("Mod image not found"))?;
+
+    // Fetch the image from the upstream URL
+    let client = reqwest::Client::new();
+    let response = client.get(image_url).send().await.map_err(|e| {
+        log::error!("Failed to fetch mod image from {}: {}", image_url, e);
+        actix_web::error::ErrorInternalServerError("Failed to fetch mod image")
+    })?;
+
+    if !response.status().is_success() {
+        return Err(actix_web::error::ErrorNotFound("Mod image not found"));
+    }
+
+    // Determine content type from response or default to image/jpeg
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "image/jpeg".to_string());
+
+    // Get the image bytes
+    let image_bytes = response.bytes().await.map_err(|e| {
+        log::error!("Failed to read mod image bytes: {}", e);
+        actix_web::error::ErrorInternalServerError("Failed to read mod image")
+    })?;
+
+    Ok(HttpResponse::Ok()
+        .content_type(content_type)
+        .body(image_bytes))
+}
+
 #[get("/modlists/{id}")]
 pub async fn details_page(
     id: web::Path<u64>,
@@ -590,9 +816,37 @@ pub async fn details_page(
     let mods = Mod::get_by_modlist_id(archive_id, &conn)
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
+    // Get associations for all mods in this modlist
+    let associations = ModAssociation::get_by_modlist_id(archive_id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    // Create a map from mod_id to association for quick lookup
+    use std::collections::HashMap;
+    let assoc_map: HashMap<u64, &ModAssociation> = associations
+        .iter()
+        .map(|assoc| (assoc.mod_id, assoc))
+        .collect();
+
     // Separate unavailable mods for the missing mods table
-    let unavailable_mods: Vec<_> = mods.iter().filter(|m| !m.available).cloned().collect();
+    let unavailable_mods: Vec<_> = mods.iter().filter(|m| !m.is_available()).cloned().collect();
     let show_missing_table = !unavailable_mods.is_empty() && unavailable_mods.len() < 25;
+
+    // Create tuples with mods and their associations for rendering
+    let unavailable_mods_with_assocs: Vec<_> = unavailable_mods
+        .iter()
+        .map(|mod_item| {
+            let assoc = assoc_map.get(&mod_item.id).cloned();
+            (mod_item, assoc)
+        })
+        .collect();
+
+    let mods_with_assocs: Vec<_> = mods
+        .iter()
+        .map(|mod_item| {
+            let assoc = assoc_map.get(&mod_item.id).cloned();
+            (mod_item, assoc)
+        })
+        .collect();
 
     let page = html! {
         (maud::DOCTYPE)
@@ -630,27 +884,61 @@ pub async fn details_page(
                                 }
                             }
                             tbody {
-                                @for mod_item in &unavailable_mods {
+                                @for (mod_item, assoc) in &unavailable_mods_with_assocs {
                                     tr {
                                         td.filename {
                                             a href=(format!("/mod/{}", mod_item.id)) {
-                                                (mod_item.filename.clone())
+                                                @match assoc {
+                                                    Some(assoc) => {
+                                                        (assoc.filename.clone())
+                                                    }
+                                                    None => {
+                                                        @match &mod_item.disk_filename {
+                                                            Some(disk_filename) => {
+                                                                (disk_filename.clone())
+                                                            }
+                                                            None => {
+                                                                em { "Unknown" }
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                         td.name {
                                             a href=(format!("/mod/{}", mod_item.id)) {
-                                                @if let Some(ref name) = mod_item.name {
-                                                    (name)
-                                                } @else {
-                                                    em { "Unknown" }
+                                                @match assoc {
+                                                    Some(assoc) => {
+                                                        @match &assoc.name {
+                                                            Some(name) => {
+                                                                (name.clone())
+                                                            }
+                                                            None => {
+                                                                em { "Unknown" }
+                                                            }
+                                                        }
+                                                    }
+                                                    None => {
+                                                        em { "Unknown" }
+                                                    }
                                                 }
                                             }
                                         }
                                         td.version {
-                                            @if let Some(ref version) = mod_item.version {
-                                                (version)
-                                            } @else {
-                                                em { "-" }
+                                            @match assoc {
+                                                Some(assoc) => {
+                                                    @match &assoc.version {
+                                                        Some(version) => {
+                                                            (version.clone())
+                                                        }
+                                                        None => {
+                                                            em { "-" }
+                                                        }
+                                                    }
+                                                }
+                                                None => {
+                                                    em { "-" }
+                                                }
                                             }
                                         }
                                         td.size {
@@ -684,27 +972,61 @@ pub async fn details_page(
                                 }
                             }
                             tbody {
-                                @for mod_item in &mods {
+                                @for (mod_item, assoc) in &mods_with_assocs {
                                     tr {
                                         td.filename {
                                             a href=(format!("/mod/{}", mod_item.id)) {
-                                                (mod_item.filename.clone())
+                                                @match assoc {
+                                                    Some(assoc) => {
+                                                        (assoc.filename.clone())
+                                                    }
+                                                    None => {
+                                                        @match &mod_item.disk_filename {
+                                                            Some(disk_filename) => {
+                                                                (disk_filename.clone())
+                                                            }
+                                                            None => {
+                                                                em { "Unknown" }
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                         td.name {
                                             a href=(format!("/mod/{}", mod_item.id)) {
-                                                @if let Some(ref name) = mod_item.name {
-                                                    (name)
-                                                } @else {
-                                                    em { "Unknown" }
+                                                @match assoc {
+                                                    Some(assoc) => {
+                                                        @match &assoc.name {
+                                                            Some(name) => {
+                                                                (name.clone())
+                                                            }
+                                                            None => {
+                                                                em { "Unknown" }
+                                                            }
+                                                        }
+                                                    }
+                                                    None => {
+                                                        em { "Unknown" }
+                                                    }
                                                 }
                                             }
                                         }
                                         td.version {
-                                            @if let Some(ref version) = mod_item.version {
-                                                (version)
-                                            } @else {
-                                                em { "-" }
+                                            @match assoc {
+                                                Some(assoc) => {
+                                                    @match &assoc.version {
+                                                        Some(version) => {
+                                                            (version.clone())
+                                                        }
+                                                        None => {
+                                                            em { "-" }
+                                                        }
+                                                    }
+                                                }
+                                                None => {
+                                                    em { "-" }
+                                                }
                                             }
                                         }
                                         td.size {
@@ -714,7 +1036,7 @@ pub async fn details_page(
                                             code { (format_hash(&mod_item.xxhash64)) }
                                         }
                                         td.status {
-                                            @if mod_item.available {
+                                            @if mod_item.is_available() {
                                                 span.status-badge.available { "Available" }
                                             } @else {
                                                 span.status-badge.unavailable { "Unavailable" }
