@@ -38,10 +38,12 @@ impl DataDir {
         self.0.join("Downloads")
     }
 
+    #[allow(dead_code)]
     pub fn get_modlist_path(&self, modlist_filename: &str) -> PathBuf {
         self.get_modlist_dir().join(modlist_filename)
     }
 
+    #[allow(dead_code)]
     pub fn get_mod_path(&self, mod_filename: &str) -> PathBuf {
         self.get_mod_dir().join(mod_filename)
     }

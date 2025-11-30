@@ -155,6 +155,7 @@ impl Modlist {
         Ok(count > 0)
     }
 
+    #[allow(dead_code)]
     pub fn get_mod_associations(
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,

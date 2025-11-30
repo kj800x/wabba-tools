@@ -58,6 +58,7 @@ impl Mod {
         self.disk_filename.is_some()
     }
 
+    #[allow(dead_code)]
     pub fn get_by_disk_filename(
         disk_filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
@@ -160,6 +161,7 @@ impl Mod {
         Ok(mods)
     }
 
+    #[allow(dead_code)]
     pub fn update(
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
