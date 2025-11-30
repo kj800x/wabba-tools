@@ -46,7 +46,8 @@ pub async fn listing_page(
         .map(|modlist| {
             let mods_total = modlist.count_mods_total(&conn).unwrap_or(0);
             let mods_available = modlist.count_mods_available(&conn).unwrap_or(0);
-            (modlist, mods_total, mods_available)
+            let has_lost_forever = modlist.has_lost_forever_mods(&conn).unwrap_or(false);
+            (modlist, mods_total, mods_available, has_lost_forever)
         })
         .collect();
 
@@ -82,8 +83,8 @@ pub async fn listing_page(
                                 }
                             }
                             tbody {
-                                @for (modlist, mods_total, mods_available) in &modlists_with_counts {
-                                    tr {
+                                @for (modlist, mods_total, mods_available, has_lost_forever) in &modlists_with_counts {
+                                    tr class=(if *has_lost_forever { "uninstallable-row" } else { "" }) {
                                         td.name {
                                             a href={"/modlists/" (modlist.id)} {
                                                 (modlist.name)
@@ -98,7 +99,9 @@ pub async fn listing_page(
                                         td { (mods_total) }
                                         td { (mods_available) }
                                         td.status {
-                                            @if *mods_total == 0 || *mods_available == *mods_total {
+                                            @if *has_lost_forever {
+                                                span.status-badge.missing { "Uninstallable" }
+                                            } @else if *mods_total == 0 || *mods_available == *mods_total {
                                                 span.status-badge.available { "Ready" }
                                             } @else {
                                                 span.status-badge.missing { "Missing files" }

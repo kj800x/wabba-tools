@@ -5,12 +5,35 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::modlist::Modlist;
 
+#[derive(Debug)]
+pub enum ToggleLostForeverError {
+    ModHasDiskFilename,
+    DatabaseError(rusqlite::Error),
+}
+
+impl std::fmt::Display for ToggleLostForeverError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ToggleLostForeverError::ModHasDiskFilename => {
+                write!(
+                    f,
+                    "Cannot mark mod as lost forever when disk_filename is set"
+                )
+            }
+            ToggleLostForeverError::DatabaseError(e) => write!(f, "Database error: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for ToggleLostForeverError {}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Mod {
     pub id: u64,
     pub disk_filename: Option<String>,
     pub size: u64,
     pub xxhash64: String,
+    pub lost_forever: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -27,6 +50,7 @@ impl Mod {
             disk_filename: row.get(1)?,
             size: row.get(2)?,
             xxhash64: row.get(3)?,
+            lost_forever: row.get(4)?,
         })
     }
 
@@ -40,7 +64,7 @@ impl Mod {
     ) -> Result<Option<Self>, rusqlite::Error> {
         let archive = conn
             .prepare(
-                "SELECT id, disk_filename, size, xxhash64 FROM \"mod\" WHERE disk_filename = ?1",
+                "SELECT id, disk_filename, size, xxhash64, lost_forever FROM \"mod\" WHERE disk_filename = ?1",
             )?
             .query_row(params![disk_filename], |row| Ok(Mod::from_row(row)))
             .optional()?
@@ -54,7 +78,7 @@ impl Mod {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
         let archive = conn
-            .prepare("SELECT id, disk_filename, size, xxhash64 FROM \"mod\" WHERE xxhash64 = ?1")?
+            .prepare("SELECT id, disk_filename, size, xxhash64, lost_forever FROM \"mod\" WHERE xxhash64 = ?1")?
             .query_row(params![hash], |row| Ok(Mod::from_row(row)))
             .optional()?
             .transpose()?;
@@ -67,7 +91,7 @@ impl Mod {
         hash: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, disk_filename, size, xxhash64 FROM \"mod\" WHERE size = ?1 AND xxhash64 = ?2")?
+        let archive = conn.prepare("SELECT id, disk_filename, size, xxhash64, lost_forever FROM \"mod\" WHERE size = ?1 AND xxhash64 = ?2")?
         .query_row(params![size, hash], |row| {
             Ok(Mod::from_row(row))
         })
@@ -82,7 +106,9 @@ impl Mod {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
         let archive = conn
-            .prepare("SELECT id, disk_filename, size, xxhash64 FROM \"mod\" WHERE id = ?1")?
+            .prepare(
+                "SELECT id, disk_filename, size, xxhash64, lost_forever FROM \"mod\" WHERE id = ?1",
+            )?
             .query_row(params![id], |row| Ok(Mod::from_row(row)))
             .optional()?
             .transpose()?;
@@ -94,7 +120,7 @@ impl Mod {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
         let mut stmt = conn.prepare(
-            "SELECT id, disk_filename, size, xxhash64 FROM \"mod\" ORDER BY disk_filename",
+            "SELECT id, disk_filename, size, xxhash64, lost_forever FROM \"mod\" ORDER BY disk_filename",
         )?;
         let mods = stmt
             .query_map([], |row| Ok(Mod::from_row(row)?))?
@@ -107,7 +133,7 @@ impl Mod {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
         let mut stmt = conn.prepare(
-            "SELECT id, disk_filename, size, xxhash64 FROM \"mod\" WHERE disk_filename IS NULL",
+            "SELECT id, disk_filename, size, xxhash64, lost_forever FROM \"mod\" WHERE disk_filename IS NULL",
         )?;
         let mods = stmt
             .query_map([], |row| Ok(Mod::from_row(row)?))?
@@ -121,7 +147,7 @@ impl Mod {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
         let mut stmt = conn.prepare(
-            "SELECT \"mod\".id, \"mod\".disk_filename, \"mod\".size, \"mod\".xxhash64
+            "SELECT \"mod\".id, \"mod\".disk_filename, \"mod\".size, \"mod\".xxhash64, \"mod\".lost_forever
              FROM \"mod\"
              INNER JOIN mod_association ON \"mod\".id = mod_association.mod_id
              WHERE mod_association.modlist_id = ?1
@@ -138,8 +164,8 @@ impl Mod {
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<(), rusqlite::Error> {
-        conn.prepare("INSERT OR REPLACE INTO \"mod\" (id, disk_filename, size, xxhash64) VALUES (?1, ?2, ?3, ?4)")?
-        .execute(params![self.id, self.disk_filename, self.size, self.xxhash64])?;
+        conn.prepare("INSERT OR REPLACE INTO \"mod\" (id, disk_filename, size, xxhash64, lost_forever) VALUES (?1, ?2, ?3, ?4, ?5)")?
+        .execute(params![self.id, self.disk_filename, self.size, self.xxhash64, self.lost_forever])?;
 
         Ok(())
     }
@@ -149,8 +175,26 @@ impl Mod {
         disk_filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<(), rusqlite::Error> {
-        conn.prepare("UPDATE \"mod\" SET disk_filename = ?1 WHERE id = ?2")?
+        conn.prepare("UPDATE \"mod\" SET disk_filename = ?1, lost_forever = FALSE WHERE id = ?2")?
             .execute(params![disk_filename, self.id])?;
+
+        Ok(())
+    }
+
+    pub fn toggle_lost_forever(
+        &self,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<(), ToggleLostForeverError> {
+        // Can't mark as lost_forever if disk_filename is set
+        if self.disk_filename.is_some() {
+            return Err(ToggleLostForeverError::ModHasDiskFilename);
+        }
+
+        let new_value = !self.lost_forever;
+        conn.prepare("UPDATE \"mod\" SET lost_forever = ?1 WHERE id = ?2")
+            .map_err(|e| ToggleLostForeverError::DatabaseError(e))?
+            .execute(params![new_value, self.id])
+            .map_err(|e| ToggleLostForeverError::DatabaseError(e))?;
 
         Ok(())
     }
@@ -190,7 +234,7 @@ impl Mod {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
         let mut stmt = conn.prepare(
-            "SELECT id, disk_filename, size, xxhash64
+            "SELECT id, disk_filename, size, xxhash64, lost_forever
              FROM \"mod\"
              WHERE disk_filename = ?1 AND id != ?2
              ORDER BY id",
@@ -218,6 +262,7 @@ impl ModEgg {
             disk_filename: self.disk_filename.clone(),
             size: self.size,
             xxhash64: self.xxhash64.clone(),
+            lost_forever: false,
         })
     }
 }

@@ -22,6 +22,7 @@ pub fn migrate(mut conn: PooledConnection<SqliteConnectionManager>) -> Result<()
               disk_filename TEXT,
               size INTEGER NOT NULL,
               xxhash64 TEXT NOT NULL,
+              lost_forever BOOLEAN NOT NULL DEFAULT FALSE,
               created_at TIMESTAMP NOT NULL DEFAULT (unixepoch())
           );
           CREATE INDEX mod_filename_idx ON "mod"(disk_filename);

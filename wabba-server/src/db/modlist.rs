@@ -127,6 +127,21 @@ impl Modlist {
         Ok(count as u64)
     }
 
+    pub fn has_lost_forever_mods(
+        &self,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<bool, rusqlite::Error> {
+        let count: i64 = conn
+            .prepare(
+                "SELECT COUNT(*) FROM mod_association
+             INNER JOIN \"mod\" ON mod_association.mod_id = \"mod\".id
+             WHERE mod_association.modlist_id = ?1 AND \"mod\".lost_forever = TRUE",
+            )?
+            .query_row(params![self.id], |row| row.get(0))?;
+
+        Ok(count > 0)
+    }
+
     pub fn get_mod_associations(
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,

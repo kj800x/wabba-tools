@@ -622,6 +622,16 @@
           background-color: #ffe8e8;
         }
       }
+
+      &.uninstallable-row {
+        background-color: #e8e8e8;
+        opacity: 0.6;
+        font-size: 0.85em;
+
+        &:hover {
+          background-color: #d8d8d8;
+        }
+      }
     }
 
     td {

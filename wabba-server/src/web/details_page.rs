@@ -1,4 +1,4 @@
-use actix_web::{HttpResponse, Responder, get, web};
+use actix_web::{HttpResponse, Responder, get, post, web};
 use maud::html;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -497,6 +497,25 @@ pub async fn mod_details_page(
                                     span.status-badge.unavailable { "Unavailable" }
                                 }
                             }
+                            @if !mod_item.is_available() {
+                                p {
+                                    strong { "Lost Forever: " }
+                                    @if mod_item.lost_forever {
+                                        span.status-badge.missing { "Yes" }
+                                    } @else {
+                                        span { "No" }
+                                    }
+                                    form method="post" action=(format!("/mod/{}/toggle-lost-forever", mod_item.id)) style="display: inline-block; margin-left: 1rem;" {
+                                        button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #3498db; color: white; font-weight: 500;" {
+                                            @if mod_item.lost_forever {
+                                                "Mark as Recoverable"
+                                            } @else {
+                                                "Mark as Lost Forever"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -820,6 +839,37 @@ pub async fn mod_image(
     Ok(HttpResponse::Ok()
         .content_type(content_type)
         .body(image_bytes))
+}
+
+#[post("/mod/{id}/toggle-lost-forever")]
+pub async fn toggle_lost_forever(
+    id: web::Path<u64>,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+) -> Result<impl Responder, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let mod_id = id.into_inner();
+
+    let mod_item = Mod::get_by_id(mod_id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .ok_or_else(|| actix_web::error::ErrorNotFound("Mod not found"))?;
+
+    mod_item.toggle_lost_forever(&conn).map_err(|e| match e {
+        crate::db::mod_data::ToggleLostForeverError::ModHasDiskFilename => {
+            actix_web::error::ErrorBadRequest(
+                "Cannot mark mod as lost forever when disk_filename is set",
+            )
+        }
+        crate::db::mod_data::ToggleLostForeverError::DatabaseError(e) => {
+            actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+        }
+    })?;
+
+    // Redirect back to the mod details page
+    Ok(HttpResponse::SeeOther()
+        .append_header(("Location", format!("/mod/{}", mod_id)))
+        .finish())
 }
 
 #[get("/modlists/{id}")]
