@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  labels:
+    app.kubernetes.io/instance: wabba-server
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: wabba.home.coolkev.com
+    traefik.ingress.kubernetes.io/router.tls.certresolver: letsencrypt
+  name: wabba-server
+  namespace: wabba-server
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: wabba.home.coolkev.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: wabba-server
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix
