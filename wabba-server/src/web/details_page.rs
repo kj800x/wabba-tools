@@ -328,13 +328,19 @@ pub async fn mod_details_page(
         .get_associated_modlists(&conn)
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
-    // Compute mod counts for each modlist
-    let modlists_with_counts: Vec<_> = modlists
+    // Create a map from modlist_id to ModAssociation for quick lookup
+    use std::collections::HashMap;
+    let assoc_map: HashMap<u64, &ModAssociation> = associations
+        .iter()
+        .map(|assoc| (assoc.modlist_id, assoc))
+        .collect();
+
+    // Create tuples with modlists and their associations
+    let modlists_with_assocs: Vec<_> = modlists
         .iter()
         .map(|modlist| {
-            let mods_total = modlist.count_mods_total(&conn).unwrap_or(0);
-            let mods_available = modlist.count_mods_available(&conn).unwrap_or(0);
-            (modlist, mods_total, mods_available)
+            let assoc = assoc_map.get(&modlist.id).cloned();
+            (modlist, assoc)
         })
         .collect();
 
@@ -482,7 +488,7 @@ pub async fn mod_details_page(
                         }
                             }
                             p { strong { "Size: " } (format_size(mod_item.size)) }
-                            p { strong { "Hash: " } (format_hash(&mod_item.xxhash64)) }
+                            p { strong { "Hash: " } span.hash { code { (format_hash(&mod_item.xxhash64)) } } }
                             p {
                                 strong { "Status: " }
                                 @if mod_item.is_available() {
@@ -596,7 +602,7 @@ pub async fn mod_details_page(
                     }
 
                     h2 { "Associated Modlists" }
-                    @if modlists_with_counts.is_empty() {
+                    @if modlists_with_assocs.is_empty() {
                         p.empty-state { "This mod is not associated with any modlists." }
                     } @else {
                         table.mod-table {
@@ -611,7 +617,7 @@ pub async fn mod_details_page(
                                 }
                             }
                             tbody {
-                                @for (modlist, mods_total, mods_available) in &modlists_with_counts {
+                                @for (modlist, assoc) in &modlists_with_assocs {
                                     tr {
                                         td.name {
                                             a href=(format!("/modlists/{}", modlist.id)) {
@@ -619,16 +625,34 @@ pub async fn mod_details_page(
                                             }
                                         }
                                         td.version { (modlist.version.clone()) }
-                                        td.filename { (modlist.filename.clone()) }
-                                        td.size { (format_size(modlist.size)) }
+                                        td.filename {
+                                            @match assoc {
+                                                Some(assoc) => {
+                                                    (assoc.filename.clone())
+                                                }
+                                                None => {
+                                                    @match &mod_item.disk_filename {
+                                                        Some(disk_filename) => {
+                                                            (disk_filename.clone())
+                                                        }
+                                                        None => {
+                                                            em { "Unknown" }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        td.size { (format_size(mod_item.size)) }
                                         td.hash {
-                                            code { (format_hash(&modlist.xxhash64)) }
+                                            span.hash {
+                                                code { (format_hash(&mod_item.xxhash64)) }
+                                            }
                                         }
                                         td.status {
-                                            @if *mods_total == 0 || *mods_available == *mods_total {
-                                                span.status-badge.available { "Ready" }
+                                            @if mod_item.is_available() {
+                                                span.status-badge.available { "Available" }
                                             } @else {
-                                                span.status-badge.missing { "Missing files" }
+                                                span.status-badge.unavailable { "Unavailable" }
                                             }
                                         }
                                     }
@@ -866,7 +890,7 @@ pub async fn details_page(
                             p { strong { "Version: " } (modlist.version.clone()) }
                             p { strong { "Filename: " } (modlist.filename.clone()) }
                             p { strong { "Size: " } (format_size(modlist.size)) }
-                            p { strong { "Hash: " } (format_hash(&modlist.xxhash64)) }
+                            p { strong { "Hash: " } span.hash { code { (format_hash(&modlist.xxhash64)) } } }
                         }
                     }
 

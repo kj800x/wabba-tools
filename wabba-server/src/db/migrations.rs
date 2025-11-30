@@ -26,6 +26,7 @@ pub fn migrate(mut conn: PooledConnection<SqliteConnectionManager>) -> Result<()
           );
           CREATE INDEX mod_filename_idx ON "mod"(disk_filename);
           CREATE INDEX mod_xxhash64_idx ON "mod"(xxhash64);
+          CREATE INDEX mod_size_hash_idx ON "mod"(size, xxhash64);
 
           CREATE TABLE mod_association (
               modlist_id INTEGER NOT NULL,
@@ -40,6 +41,8 @@ pub fn migrate(mut conn: PooledConnection<SqliteConnectionManager>) -> Result<()
               FOREIGN KEY(mod_id) REFERENCES "mod"(id),
               UNIQUE(modlist_id, mod_id)
           );
+          CREATE INDEX mod_association_modlist_id_idx ON mod_association(modlist_id);
+          CREATE INDEX mod_association_mod_id_idx ON mod_association(mod_id);
       "#}),
         // M::up( indoc! { r#"
         //     SQL GOES HERE
