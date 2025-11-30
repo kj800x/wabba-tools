@@ -14,6 +14,7 @@ pub struct Modlist {
     pub size: u64,
     pub xxhash64: String,
     pub available: bool,
+    pub muted: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -36,6 +37,7 @@ impl Modlist {
             size: row.get(4)?,
             xxhash64: row.get(5)?,
             available: row.get(6)?,
+            muted: row.get(7).unwrap_or(false),
         })
     }
 
@@ -43,7 +45,7 @@ impl Modlist {
         filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist WHERE filename = ?1")?
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available, muted FROM modlist WHERE filename = ?1")?
         .query_row(params![filename], |row| {
           Ok(Modlist::from_row(row))
         })
@@ -58,7 +60,7 @@ impl Modlist {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
         let archive = conn
-            .prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist WHERE xxhash64 = ?1")?
+            .prepare("SELECT id, filename, name, version, size, xxhash64, available, muted FROM modlist WHERE xxhash64 = ?1")?
             .query_row(params![hash], |row| Ok(Modlist::from_row(row)))
             .optional()?
             .transpose()?;
@@ -70,7 +72,7 @@ impl Modlist {
         id: u64,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Option<Self>, rusqlite::Error> {
-        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist WHERE id = ?1")?
+        let archive = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available, muted FROM modlist WHERE id = ?1")?
             .query_row(params![id], |row| {
                 Ok(Modlist::from_row(row))
             })
@@ -83,7 +85,18 @@ impl Modlist {
     pub fn get_all(
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
-        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available FROM modlist ORDER BY name, version DESC")?;
+        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available, muted FROM modlist ORDER BY name, version DESC")?;
+        let archives = stmt
+            .query_map([], |row| Ok(Modlist::from_row(row)?))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(archives)
+    }
+
+    pub fn get_muted(
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Vec<Self>, rusqlite::Error> {
+        let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available, muted FROM modlist WHERE muted = TRUE ORDER BY name, version DESC")?;
         let archives = stmt
             .query_map([], |row| Ok(Modlist::from_row(row)?))?
             .collect::<Result<Vec<_>, _>>()?;
@@ -95,8 +108,8 @@ impl Modlist {
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<(), rusqlite::Error> {
-        conn.prepare("INSERT OR REPLACE INTO modlist (id, filename, name, version, size, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?
-        .execute(params![self.id, self.filename, self.name, self.version, self.size, self.xxhash64, self.available])?;
+        conn.prepare("INSERT OR REPLACE INTO modlist (id, filename, name, version, size, xxhash64, available, muted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")?
+        .execute(params![self.id, self.filename, self.name, self.version, self.size, self.xxhash64, self.available, self.muted])?;
 
         Ok(())
     }
@@ -148,6 +161,17 @@ impl Modlist {
     ) -> Result<Vec<ModAssociation>, rusqlite::Error> {
         ModAssociation::get_by_modlist_id(self.id, conn)
     }
+
+    pub fn toggle_muted(
+        &self,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<(), rusqlite::Error> {
+        let new_value = !self.muted;
+        conn.prepare("UPDATE modlist SET muted = ?1 WHERE id = ?2")?
+            .execute(params![new_value, self.id])?;
+
+        Ok(())
+    }
 }
 
 impl ModlistEgg {
@@ -155,8 +179,8 @@ impl ModlistEgg {
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Modlist, rusqlite::Error> {
-        conn.prepare("INSERT INTO modlist (filename, name, version, size, xxhash64, available) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?
-          .execute(params![self.filename, self.name, self.version, self.size, self.xxhash64, self.available])?;
+        conn.prepare("INSERT INTO modlist (filename, name, version, size, xxhash64, available, muted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?
+          .execute(params![self.filename, self.name, self.version, self.size, self.xxhash64, self.available, false])?;
 
         Ok(Modlist {
             id: conn.last_insert_rowid() as u64,
@@ -166,6 +190,7 @@ impl ModlistEgg {
             size: self.size,
             xxhash64: self.xxhash64.clone(),
             available: self.available,
+            muted: false,
         })
     }
 }

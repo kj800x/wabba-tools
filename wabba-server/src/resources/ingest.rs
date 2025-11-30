@@ -70,6 +70,7 @@ pub fn ingest_modlist(
                 xxhash64: hash.to_string(),
                 size: size,
                 available: true,
+                muted: existing.muted,
             };
             updated.update(&conn).map_err(|e| {
                 actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))

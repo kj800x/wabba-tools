@@ -335,12 +335,13 @@ pub async fn mod_details_page(
         .map(|assoc| (assoc.modlist_id, assoc))
         .collect();
 
-    // Create tuples with modlists and their associations
+    // Create tuples with modlists, their associations, and whether they have lost forever mods
     let modlists_with_assocs: Vec<_> = modlists
         .iter()
         .map(|modlist| {
             let assoc = assoc_map.get(&modlist.id).cloned();
-            (modlist, assoc)
+            let has_lost_forever = modlist.has_lost_forever_mods(&conn).unwrap_or(false);
+            (modlist, assoc, has_lost_forever)
         })
         .collect();
 
@@ -493,6 +494,8 @@ pub async fn mod_details_page(
                                 strong { "Status: " }
                                 @if mod_item.is_available() {
                                     span.status-badge.available { "Available" }
+                                } @else if mod_item.lost_forever {
+                                    span.status-badge.missing { "Lost Forever" }
                                 } @else {
                                     span.status-badge.unavailable { "Unavailable" }
                                 }
@@ -505,7 +508,7 @@ pub async fn mod_details_page(
                                     } @else {
                                         span { "No" }
                                     }
-                                    form method="post" action=(format!("/mod/{}/toggle-lost-forever", mod_item.id)) style="display: inline-block; margin-left: 1rem;" {
+                                    form method="post" action=(format!("/mod/{}/toggle-lost-forever", mod_item.id)) style="display: inline-block;" {
                                         button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #3498db; color: white; font-weight: 500;" {
                                             @if mod_item.lost_forever {
                                                 "Mark as Recoverable"
@@ -610,6 +613,8 @@ pub async fn mod_details_page(
                                         td.status {
                                             @if related_mod.is_available() {
                                                 span.status-badge.available { "Available" }
+                                            } @else if related_mod.lost_forever {
+                                                span.status-badge.missing { "Lost Forever" }
                                             } @else {
                                                 span.status-badge.unavailable { "Unavailable" }
                                             }
@@ -636,7 +641,7 @@ pub async fn mod_details_page(
                                 }
                             }
                             tbody {
-                                @for (modlist, assoc) in &modlists_with_assocs {
+                                @for (modlist, assoc, has_lost_forever) in &modlists_with_assocs {
                                     tr {
                                         td.name {
                                             a href=(format!("/modlists/{}", modlist.id)) {
@@ -668,7 +673,9 @@ pub async fn mod_details_page(
                                             }
                                         }
                                         td.status {
-                                            @if mod_item.is_available() {
+                                            @if *has_lost_forever {
+                                                span.status-badge.missing { "Uninstallable" }
+                                            } @else if mod_item.is_available() {
                                                 span.status-badge.available { "Available" }
                                             } @else {
                                                 span.status-badge.unavailable { "Unavailable" }
@@ -765,6 +772,8 @@ pub async fn mod_details_page(
                                             td.status {
                                                 @if related_mod.is_available() {
                                                     span.status-badge.available { "Available" }
+                                                } @else if related_mod.lost_forever {
+                                                    span.status-badge.missing { "Lost Forever" }
                                                 } @else {
                                                     span.status-badge.unavailable { "Unavailable" }
                                                 }
@@ -872,6 +881,39 @@ pub async fn toggle_lost_forever(
         .finish())
 }
 
+#[post("/modlists/{id}/toggle-muted")]
+pub async fn toggle_muted(
+    id: web::Path<u64>,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+) -> Result<impl Responder, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let modlist_id = id.into_inner();
+
+    let modlist = Modlist::get_by_id(modlist_id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .ok_or_else(|| actix_web::error::ErrorNotFound("Modlist not found"))?;
+
+    let was_muted = modlist.muted;
+    modlist
+        .toggle_muted(&conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    // Redirect back to the appropriate listing page based on new muted status
+    let redirect_url = if was_muted {
+        // Was muted, now unmuted - go to regular modlists page
+        "/".to_string()
+    } else {
+        // Was not muted, now muted - go to muted modlists page
+        "/modlists/muted".to_string()
+    };
+
+    Ok(HttpResponse::SeeOther()
+        .append_header(("Location", redirect_url))
+        .finish())
+}
+
 #[get("/modlists/{id}")]
 pub async fn details_page(
     id: web::Path<u64>,
@@ -934,13 +976,36 @@ pub async fn details_page(
             body.page-details {
                 div.container {
                     div.header {
-                        a.back-link href="/" { "← Back to Modlists" }
+                        a.back-link href=(if modlist.muted { "/modlists/muted" } else { "/" }) {
+                            @if modlist.muted {
+                                "← Back to Muted Modlists"
+                            } @else {
+                                "← Back to Modlists"
+                            }
+                        }
                         h1 { (modlist.name.clone()) }
                         div.metadata {
                             p { strong { "Version: " } (modlist.version.clone()) }
                             p { strong { "Filename: " } (modlist.filename.clone()) }
                             p { strong { "Size: " } (format_size(modlist.size)) }
                             p { strong { "Hash: " } span.hash { code { (format_hash(&modlist.xxhash64)) } } }
+                            p {
+                                strong { "Muted: " }
+                                @if modlist.muted {
+                                    span.status-badge.missing { "Yes" }
+                                } @else {
+                                    span { "No" }
+                                }
+                                form method="post" action=(format!("/modlists/{}/toggle-muted", modlist.id)) style="display: inline-block;" {
+                                    button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #3498db; color: white; font-weight: 500;" {
+                                        @if modlist.muted {
+                                            "Unmute Modlist"
+                                        } @else {
+                                            "Mute Modlist"
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -1022,7 +1087,11 @@ pub async fn details_page(
                                             code { (format_hash(&mod_item.xxhash64)) }
                                         }
                                         td.status {
-                                            span.status-badge.unavailable { "Unavailable" }
+                                            @if mod_item.lost_forever {
+                                                span.status-badge.missing { "Lost Forever" }
+                                            } @else {
+                                                span.status-badge.unavailable { "Unavailable" }
+                                            }
                                         }
                                     }
                                 }
@@ -1112,6 +1181,8 @@ pub async fn details_page(
                                         td.status {
                                             @if mod_item.is_available() {
                                                 span.status-badge.available { "Available" }
+                                            } @else if mod_item.lost_forever {
+                                                span.status-badge.missing { "Lost Forever" }
                                             } @else {
                                                 span.status-badge.unavailable { "Unavailable" }
                                             }

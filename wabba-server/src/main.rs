@@ -34,8 +34,10 @@ use crate::db::migrations::migrate;
 use crate::prelude::*;
 use crate::resources::bootstrap::{bootstrap, bootstrap_modlists, bootstrap_mods};
 use crate::resources::{hello_world, upload_mod, upload_modlist};
-use crate::web::details_page::{details_page, mod_details_page, mod_image, toggle_lost_forever};
-use crate::web::listing_page::{listing_page, mods_listing_page};
+use crate::web::details_page::{
+    details_page, mod_details_page, mod_image, toggle_lost_forever, toggle_muted,
+};
+use crate::web::listing_page::{listing_page, mods_listing_page, muted_modlists_page};
 // use crate::web::upload_page::{upload_mod_page, upload_mod_page_post};
 use wabba_server::serve_static_file;
 
@@ -60,10 +62,12 @@ async fn start_http(
             .service(upload_mod)
             .service(listing_page)
             .service(mods_listing_page)
+            .service(muted_modlists_page)
             .service(details_page)
             .service(mod_details_page)
             .service(mod_image)
             .service(toggle_lost_forever)
+            .service(toggle_muted)
             .service(bootstrap)
             .service(bootstrap_modlists)
             .service(bootstrap_mods)

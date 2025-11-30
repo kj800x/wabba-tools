@@ -204,7 +204,7 @@ impl Mod {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Modlist>, rusqlite::Error> {
         let mut stmt = conn.prepare(
-            "SELECT modlist.id, modlist.filename, modlist.name, modlist.version, modlist.size, modlist.xxhash64, modlist.available
+            "SELECT modlist.id, modlist.filename, modlist.name, modlist.version, modlist.size, modlist.xxhash64, modlist.available, modlist.muted
              FROM modlist
              INNER JOIN mod_association ON modlist.id = mod_association.modlist_id
              WHERE mod_association.mod_id = ?1
