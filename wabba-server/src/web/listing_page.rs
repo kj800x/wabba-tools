@@ -64,7 +64,10 @@ pub async fn listing_page(
                 div.container {
                     div.header-nav {
                         h1 { "Wabbajack Modlists" }
-                        a.nav-link href="/mods" { "View All Mods" }
+                        div.nav-links {
+                            a.nav-link href="/mods" { "View All Mods" }
+                            a.nav-link href="/upload" { "Upload" }
+                        }
                     }
                     @if modlists_with_counts.is_empty() {
                         p.empty-state { "No modlists found." }
@@ -208,6 +211,7 @@ pub async fn mods_listing_page(
                             } @else {
                                 a.nav-link href="/mods?filter=unavailable" { "View Missing Mods" }
                             }
+                            a.nav-link href="/upload" { "Upload" }
                         }
                     }
                     @if mods_with_metadata.is_empty() {
