@@ -2,7 +2,9 @@ use actix_web::{HttpResponse, Responder, get, post, web};
 use maud::html;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
+use serde::Deserialize;
 
+use crate::data_dir::DataDir;
 use crate::db::mod_association::ModAssociation;
 use crate::db::mod_data::Mod;
 use crate::db::modlist::Modlist;
@@ -914,6 +916,96 @@ pub async fn toggle_muted(
         .finish())
 }
 
+#[derive(Deserialize)]
+struct RenameForm {
+    new_filename: String,
+}
+
+#[post("/modlists/{id}/rename")]
+pub async fn rename_modlist(
+    id: web::Path<u64>,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+    data_dir: web::Data<DataDir>,
+    form: web::Form<RenameForm>,
+) -> Result<impl Responder, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let modlist_id = id.into_inner();
+    let new_filename = form.new_filename.trim().to_string();
+    let data_dir = data_dir.into_inner();
+
+    // Validate new filename is not empty
+    if new_filename.is_empty() {
+        return Err(actix_web::error::ErrorBadRequest(
+            "Filename cannot be empty",
+        ));
+    }
+
+    // Get the modlist
+    let modlist = Modlist::get_by_id(modlist_id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .ok_or_else(|| actix_web::error::ErrorNotFound("Modlist not found"))?;
+
+    // If filename hasn't changed, no-op
+    if new_filename == modlist.filename {
+        // Redirect back to the modlist details page
+        return Ok(HttpResponse::SeeOther()
+            .append_header(("Location", format!("/modlists/{}", modlist_id)))
+            .finish());
+    }
+
+    // Check if new filename is already taken
+    if let Some(existing) = Modlist::get_by_filename(&new_filename, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?
+    {
+        if existing.id != modlist_id {
+            return Err(actix_web::error::ErrorBadRequest(
+                "A modlist with this filename already exists",
+            ));
+        }
+    }
+
+    // Check if file exists on disk with new filename
+    let new_file_path = data_dir.get_modlist_path(&new_filename);
+    if new_file_path.exists() {
+        return Err(actix_web::error::ErrorBadRequest(
+            "A file with this filename already exists on disk",
+        ));
+    }
+
+    // Rename the file on disk
+    let old_file_path = data_dir.get_modlist_path(&modlist.filename);
+    if old_file_path.exists() {
+        std::fs::rename(&old_file_path, &new_file_path).map_err(|e| {
+            actix_web::error::ErrorInternalServerError(format!(
+                "Failed to rename file on disk: {}",
+                e
+            ))
+        })?;
+    }
+
+    // Update the database entry
+    let updated_modlist = Modlist {
+        id: modlist.id,
+        filename: new_filename.clone(),
+        name: modlist.name,
+        version: modlist.version,
+        size: modlist.size,
+        xxhash64: modlist.xxhash64,
+        available: modlist.available,
+        muted: modlist.muted,
+    };
+    updated_modlist
+        .update(&conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    // Redirect back to the modlist details page
+    Ok(HttpResponse::SeeOther()
+        .append_header(("Location", format!("/modlists/{}", modlist_id)))
+        .finish())
+}
+
 #[get("/modlists/{id}")]
 pub async fn details_page(
     id: web::Path<u64>,
@@ -986,7 +1078,16 @@ pub async fn details_page(
                         h1 { (modlist.name.clone()) }
                         div.metadata {
                             p { strong { "Version: " } (modlist.version.clone()) }
-                            p { strong { "Filename: " } (modlist.filename.clone()) }
+                            p {
+                                strong { "Filename: " }
+                                (modlist.filename.clone())
+                                form method="post" action=(format!("/modlists/{}/rename", modlist.id)) style="display: inline-block; margin-left: 1rem;" {
+                                    input type="text" name="new_filename" value=(modlist.filename.clone()) style="padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; margin-right: 0.5rem;" required;
+                                    button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #27ae60; color: white; font-weight: 500;" {
+                                        "Rename"
+                                    }
+                                }
+                            }
                             p { strong { "Size: " } (format_size(modlist.size)) }
                             p { strong { "Hash: " } span.hash { code { (format_hash(&modlist.xxhash64)) } } }
                             p {
