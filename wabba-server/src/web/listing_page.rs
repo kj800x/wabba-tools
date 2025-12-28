@@ -38,7 +38,11 @@ pub async fn listing_page(
     let conn = pool
         .get()
         .map_err(actix_web::error::ErrorInternalServerError)?;
-    let modlists = Modlist::get_all(&conn).map_err(actix_web::error::ErrorInternalServerError)?;
+    let all_modlists =
+        Modlist::get_all(&conn).map_err(actix_web::error::ErrorInternalServerError)?;
+
+    // Filter out muted modlists
+    let modlists: Vec<_> = all_modlists.iter().filter(|m| !m.muted).collect();
 
     // Compute mod counts for each modlist
     let modlists_with_counts: Vec<_> = modlists
@@ -66,6 +70,7 @@ pub async fn listing_page(
                         h1 { "Wabbajack Modlists" }
                         div.nav-links {
                             a.nav-link href="/mods" { "View All Mods" }
+                            a.nav-link href="/modlists/muted" { "View Muted Modlists" }
                             a.nav-link href="/upload" { "Upload" }
                         }
                     }
@@ -87,7 +92,15 @@ pub async fn listing_page(
                             }
                             tbody {
                                 @for (modlist, mods_total, mods_available, has_lost_forever) in &modlists_with_counts {
-                                    tr class=(if *has_lost_forever { "uninstallable-row" } else { "" }) {
+                                    tr class=(
+                                        if *has_lost_forever {
+                                            "uninstallable-row"
+                                        } else if *mods_total > 0 && *mods_available < *mods_total {
+                                            "unavailable-row"
+                                        } else {
+                                            ""
+                                        }
+                                    ) {
                                         td.name {
                                             a href={"/modlists/" (modlist.id)} {
                                                 (modlist.name)
@@ -133,6 +146,108 @@ pub async fn listing_page(
                         form method="post" action="/bootstrap/mods" {
                             button.bootstrap-button type="submit" {
                                 "Run Mods Bootstrap"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(page.into_string()))
+}
+
+#[get("/modlists/muted")]
+pub async fn muted_modlists_page(
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+) -> Result<impl Responder, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let modlists = Modlist::get_muted(&conn).map_err(actix_web::error::ErrorInternalServerError)?;
+
+    // Compute mod counts for each modlist
+    let modlists_with_counts: Vec<_> = modlists
+        .iter()
+        .map(|modlist| {
+            let mods_total = modlist.count_mods_total(&conn).unwrap_or(0);
+            let mods_available = modlist.count_mods_available(&conn).unwrap_or(0);
+            let has_lost_forever = modlist.has_lost_forever_mods(&conn).unwrap_or(false);
+            (modlist, mods_total, mods_available, has_lost_forever)
+        })
+        .collect();
+
+    let page = html! {
+        (maud::DOCTYPE)
+        html {
+            head {
+                meta charset="utf-8";
+                meta name="viewport" content="width=device-width, initial-scale=1";
+                title { "Muted Modlists" }
+                link rel="stylesheet" href="/res/styles.css";
+            }
+            body.page-listing {
+                div.container {
+                    div.header-nav {
+                        h1 { "Muted Modlists" }
+                        div.nav-links {
+                            a.nav-link href="/" { "View All Modlists" }
+                            a.nav-link href="/mods" { "View All Mods" }
+                        }
+                    }
+                    @if modlists_with_counts.is_empty() {
+                        p.empty-state { "No muted modlists found." }
+                    } @else {
+                        table.modlist-table {
+                            thead {
+                                tr {
+                                    th { "Name" }
+                                    th { "Version" }
+                                    th { "Filename" }
+                                    th { "Size" }
+                                    th { "Hash" }
+                                    th { "Mods total" }
+                                    th { "Mods available" }
+                                    th { "Status" }
+                                }
+                            }
+                            tbody {
+                                @for (modlist, mods_total, mods_available, has_lost_forever) in &modlists_with_counts {
+                                    tr class=(
+                                        if *has_lost_forever {
+                                            "uninstallable-row"
+                                        } else if *mods_total > 0 && *mods_available < *mods_total {
+                                            "unavailable-row"
+                                        } else {
+                                            "muted-row"
+                                        }
+                                    ) {
+                                        td.name {
+                                            a href={"/modlists/" (modlist.id)} {
+                                                (modlist.name)
+                                            }
+                                        }
+                                        td.version { (modlist.version) }
+                                        td.filename { (modlist.filename) }
+                                        td.size { (format_size(modlist.size)) }
+                                        td.hash {
+                                            code { (format_hash(&modlist.xxhash64)) }
+                                        }
+                                        td { (mods_total) }
+                                        td { (mods_available) }
+                                        td.status {
+                                            @if *has_lost_forever {
+                                                span.status-badge.missing { "Uninstallable" }
+                                            } @else if *mods_total == 0 || *mods_available == *mods_total {
+                                                span.status-badge.available { "Ready" }
+                                            } @else {
+                                                span.status-badge.missing { "Missing files" }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -301,6 +416,8 @@ pub async fn mods_listing_page(
                                         td.status {
                                             @if mod_item.is_available() {
                                                 span.status-badge.available { "Available" }
+                                            } @else if mod_item.lost_forever {
+                                                span.status-badge.missing { "Lost Forever" }
                                             } @else {
                                                 span.status-badge.unavailable { "Unavailable" }
                                             }

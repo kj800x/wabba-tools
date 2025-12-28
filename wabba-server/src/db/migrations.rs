@@ -12,6 +12,7 @@ pub fn migrate(mut conn: PooledConnection<SqliteConnectionManager>) -> Result<()
               size INTEGER NOT NULL,
               xxhash64 TEXT NOT NULL,
               available BOOLEAN NOT NULL DEFAULT FALSE,
+              muted BOOLEAN NOT NULL DEFAULT FALSE,
               created_at TIMESTAMP NOT NULL DEFAULT (unixepoch())
           );
           CREATE INDEX modlist_filename_idx ON modlist(filename);

@@ -1,0 +1,8 @@
+artifactRepo:
+  owner: kj800x
+  repo: wabba-tools
+  branch: master
+
+team: kj800x
+kind: service
+namespace: wabba-server

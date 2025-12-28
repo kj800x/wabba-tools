@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: wabba-server
+  name: wabba-server
+  namespace: wabba-server
+spec:
+  replicas: 1
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: wabba-server
+  template:
+    metadata:
+      labels:
+        app: wabba-server
+    spec:
+      containers:
+        - command:
+            - wabba-server
+          env:
+            - name: DATA_DIR
+              value: /data
+          image: ghcr.io/kj800x/wabba-tools:commit-$SHA
+          name: wabba-server
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /data
+              name: wabba-server-data
+          workingDir: /usr/src/wabba-server
+      imagePullSecrets:
+        - name: ghcr-kj800x
+      volumes:
+        - name: wabba-server-data
+          nfs:
+            path: /data/users/prensox/Wabbajack
+            server: 10.60.1.15

@@ -107,6 +107,7 @@ impl ModAssociation {
         Ok(associations)
     }
 
+    #[allow(dead_code)]
     pub fn get_mod_with_association(
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
@@ -114,6 +115,7 @@ impl ModAssociation {
         Mod::get_by_id(self.mod_id, conn)
     }
 
+    #[allow(dead_code)]
     pub fn get_modlist_with_association(
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
@@ -121,6 +123,7 @@ impl ModAssociation {
         Modlist::get_by_id(self.modlist_id, conn)
     }
 
+    #[allow(dead_code)]
     pub fn update(
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
@@ -141,6 +144,7 @@ impl ModAssociation {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn delete(
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,

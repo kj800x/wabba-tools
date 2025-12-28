@@ -92,26 +92,86 @@
       word-wrap: break-word;
       overflow-wrap: break-word;
 
-      &:nth-child(1) { width: 18%; }  /* Name */
-      &:nth-child(2) { width: 8%; }   /* Version */
-      &:nth-child(3) { width: 18%; }   /* Filename */
-      &:nth-child(4) { width: 8%; }   /* Size */
-      &:nth-child(5) { width: 15%; }   /* Hash */
-      &:nth-child(6) { width: 8%; }   /* Mods total */
-      &:nth-child(7) { width: 8%; }   /* Mods available */
-      &:nth-child(8) { width: 17%; }   /* Status */
+      &:nth-child(1) {
+        width: 18%;
+      }
+
+      /* Name */
+      &:nth-child(2) {
+        width: 8%;
+      }
+
+      /* Version */
+      &:nth-child(3) {
+        width: 18%;
+      }
+
+      /* Filename */
+      &:nth-child(4) {
+        width: 8%;
+      }
+
+      /* Size */
+      &:nth-child(5) {
+        width: 15%;
+      }
+
+      /* Hash */
+      &:nth-child(6) {
+        width: 8%;
+      }
+
+      /* Mods total */
+      &:nth-child(7) {
+        width: 8%;
+      }
+
+      /* Mods available */
+      &:nth-child(8) {
+        width: 17%;
+      }
+
+      /* Status */
     }
 
     /* Mods table variant - 7 columns: Filename, Name, Version, Size, Hash, Modlists, Status */
     &.mods-table {
       th {
-        &:nth-child(1) { width: 20%; }  /* Filename */
-        &:nth-child(2) { width: 25%; }   /* Name */
-        &:nth-child(3) { width: 10%; }   /* Version */
-        &:nth-child(4) { width: 10%; }   /* Size */
-        &:nth-child(5) { width: 18%; }   /* Hash */
-        &:nth-child(6) { width: 7%; }    /* Modlists */
-        &:nth-child(7) { width: 10%; }   /* Status */
+        &:nth-child(1) {
+          width: 20%;
+        }
+
+        /* Filename */
+        &:nth-child(2) {
+          width: 25%;
+        }
+
+        /* Name */
+        &:nth-child(3) {
+          width: 10%;
+        }
+
+        /* Version */
+        &:nth-child(4) {
+          width: 10%;
+        }
+
+        /* Size */
+        &:nth-child(5) {
+          width: 18%;
+        }
+
+        /* Hash */
+        &:nth-child(6) {
+          width: 7%;
+        }
+
+        /* Modlists */
+        &:nth-child(7) {
+          width: 10%;
+        }
+
+        /* Status */
       }
     }
 
@@ -132,6 +192,25 @@
 
         &:hover {
           background-color: #ffe8e8;
+        }
+      }
+
+      &.uninstallable-row {
+        background-color: #e8e8e8;
+        opacity: 0.6;
+        font-size: 0.85em;
+
+        &:hover {
+          background-color: #d8d8d8;
+        }
+      }
+
+      &.muted-row {
+        background-color: #f0f0f0;
+        opacity: 0.7;
+
+        &:hover {
+          background-color: #e0e0e0;
         }
       }
     }
@@ -408,6 +487,10 @@
       color: #333;
       font-weight: 600;
     }
+
+    form {
+      margin-left: 0;
+    }
   }
 
   .source-section {
@@ -563,23 +646,75 @@
       word-wrap: break-word;
       overflow-wrap: break-word;
 
-      &:nth-child(1) { width: 18%; }  /* Filename */
-      &:nth-child(2) { width: 23%; }   /* Name */
-      &:nth-child(3) { width: 10%; }   /* Version */
-      &:nth-child(4) { width: 10%; }   /* Size */
-      &:nth-child(5) { width: 23%; }   /* Hash */
-      &:nth-child(6) { width: 16%; }   /* Status */
+      &:nth-child(1) {
+        width: 18%;
+      }
+
+      /* Filename */
+      &:nth-child(2) {
+        width: 23%;
+      }
+
+      /* Name */
+      &:nth-child(3) {
+        width: 10%;
+      }
+
+      /* Version */
+      &:nth-child(4) {
+        width: 10%;
+      }
+
+      /* Size */
+      &:nth-child(5) {
+        width: 23%;
+      }
+
+      /* Hash */
+      &:nth-child(6) {
+        width: 16%;
+      }
+
+      /* Status */
     }
 
     &.mod-table-with-id {
       th {
-        &:nth-child(1) { width: 8%; }   /* ID */
-        &:nth-child(2) { width: 16%; }  /* Filename */
-        &:nth-child(3) { width: 20%; }   /* Name */
-        &:nth-child(4) { width: 9%; }    /* Version */
-        &:nth-child(5) { width: 9%; }   /* Size */
-        &:nth-child(6) { width: 22%; }  /* Hash */
-        &:nth-child(7) { width: 16%; }  /* Status */
+        &:nth-child(1) {
+          width: 8%;
+        }
+
+        /* ID */
+        &:nth-child(2) {
+          width: 16%;
+        }
+
+        /* Filename */
+        &:nth-child(3) {
+          width: 20%;
+        }
+
+        /* Name */
+        &:nth-child(4) {
+          width: 9%;
+        }
+
+        /* Version */
+        &:nth-child(5) {
+          width: 9%;
+        }
+
+        /* Size */
+        &:nth-child(6) {
+          width: 22%;
+        }
+
+        /* Hash */
+        &:nth-child(7) {
+          width: 16%;
+        }
+
+        /* Status */
       }
 
       td {
@@ -630,6 +765,15 @@
 
         &:hover {
           background-color: #d8d8d8;
+        }
+      }
+
+      &.muted-row {
+        background-color: #f0f0f0;
+        opacity: 0.7;
+
+        &:hover {
+          background-color: #e0e0e0;
         }
       }
     }

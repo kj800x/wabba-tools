@@ -58,6 +58,7 @@ impl Mod {
         self.disk_filename.is_some()
     }
 
+    #[allow(dead_code)]
     pub fn get_by_disk_filename(
         disk_filename: &str,
         conn: &PooledConnection<SqliteConnectionManager>,
@@ -160,6 +161,7 @@ impl Mod {
         Ok(mods)
     }
 
+    #[allow(dead_code)]
     pub fn update(
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
@@ -204,7 +206,7 @@ impl Mod {
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Modlist>, rusqlite::Error> {
         let mut stmt = conn.prepare(
-            "SELECT modlist.id, modlist.filename, modlist.name, modlist.version, modlist.size, modlist.xxhash64, modlist.available
+            "SELECT modlist.id, modlist.filename, modlist.name, modlist.version, modlist.size, modlist.xxhash64, modlist.available, modlist.muted
              FROM modlist
              INNER JOIN mod_association ON modlist.id = mod_association.modlist_id
              WHERE mod_association.mod_id = ?1
