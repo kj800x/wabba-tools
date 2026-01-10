@@ -235,17 +235,21 @@ pub async fn upload_post(
             .map_err(actix_web::error::ErrorInternalServerError)?
             .len() as u64;
 
-        if let Ok(Some(_existing_mod)) = Mod::get_by_size_and_hash(file_size, &hash, &conn) {
-            // File already exists with same hash, delete the uploaded file
-            let _ = std::fs::remove_file(&path);
-            return Ok(render_upload_result(
-                false,
-                format!(
-                    "Mod with size {} and hash {} already exists",
-                    file_size, hash
-                ),
-                Some(hash),
-            ));
+        if let Ok(Some(existing_mod)) = Mod::get_by_size_and_hash(file_size, &hash, &conn) {
+            // If mod exists and is available, reject the upload
+            if existing_mod.is_available() {
+                let _ = std::fs::remove_file(&path);
+                return Ok(render_upload_result(
+                    false,
+                    format!(
+                        "Mod with size {} and hash {} already exists",
+                        file_size, hash
+                    ),
+                    Some(hash),
+                ));
+            }
+            // If mod exists but is unavailable, allow the upload to proceed
+            // and ingest_mod will mark it as available
         }
 
         // Ingest the mod
