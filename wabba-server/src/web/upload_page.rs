@@ -182,12 +182,15 @@ pub async fn upload_post(
         // Handle modlist upload
         // Check if a modlist with this hash already exists
         if let Ok(Some(existing_modlist)) = Modlist::get_by_hash(&hash, &conn) {
-            // File already exists with same hash, delete the uploaded file
-            let _ = std::fs::remove_file(&path);
-            // Redirect to existing modlist details page
-            return Ok(HttpResponse::SeeOther()
-                .append_header(("Location", format!("/modlists/{}", existing_modlist.id)))
-                .finish());
+            // If modlist exists and is available, redirect to its details page
+            if existing_modlist.available {
+                let _ = std::fs::remove_file(&path);
+                return Ok(HttpResponse::SeeOther()
+                    .append_header(("Location", format!("/modlists/{}", existing_modlist.id)))
+                    .finish());
+            }
+            // If modlist exists but is unavailable, allow the upload to proceed
+            // and ingest_modlist will mark it as available
         }
 
         // Ingest the modlist
