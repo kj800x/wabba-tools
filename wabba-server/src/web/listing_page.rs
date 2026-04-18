@@ -3,7 +3,6 @@ use maud::html;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
-use crate::db::mod_association::ModAssociation;
 use crate::db::mod_data::Mod;
 use crate::db::modlist::Modlist;
 
@@ -275,24 +274,8 @@ pub async fn mods_listing_page(
         .map(|s| s == "unavailable")
         .unwrap_or(false);
 
-    let mods = if show_unavailable_only {
-        Mod::get_unavailable(&conn).map_err(actix_web::error::ErrorInternalServerError)?
-    } else {
-        Mod::get_all(&conn).map_err(actix_web::error::ErrorInternalServerError)?
-    };
-
-    // Get associations for all mods to display modlist-specific metadata
-    // For the listing, we'll use the first association's metadata (if any)
-    let mods_with_metadata: Vec<_> = mods
-        .iter()
-        .map(|mod_item| {
-            let modlists_count = mod_item.count_modlists(&conn).unwrap_or(0);
-            let associations =
-                ModAssociation::get_by_mod_id(mod_item.id, &conn).unwrap_or_default();
-            let first_assoc = associations.first().cloned();
-            (mod_item, modlists_count, first_assoc)
-        })
-        .collect();
+    let mods_with_metadata = Mod::get_all_for_listing(show_unavailable_only, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
 
     let page = html! {
         (maud::DOCTYPE)

@@ -2,7 +2,9 @@ use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
+use wabba_protocol::archive_state::ArchiveState;
 
+use crate::db::mod_association::ModAssociation;
 use crate::db::modlist::Modlist;
 
 #[derive(Debug)]
@@ -117,6 +119,7 @@ impl Mod {
         Ok(archive)
     }
 
+    #[allow(dead_code)]
     pub fn get_all(
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
@@ -130,6 +133,7 @@ impl Mod {
         Ok(mods)
     }
 
+    #[allow(dead_code)]
     pub fn get_unavailable(
         conn: &PooledConnection<SqliteConnectionManager>,
     ) -> Result<Vec<Self>, rusqlite::Error> {
@@ -219,6 +223,7 @@ impl Mod {
         Ok(modlists)
     }
 
+    #[allow(dead_code)]
     pub fn count_modlists(
         &self,
         conn: &PooledConnection<SqliteConnectionManager>,
@@ -248,6 +253,79 @@ impl Mod {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(mods)
+    }
+
+    /// Returns every mod along with its association count and first
+    /// association (lowest modlist_id) in a single query. Replaces the
+    /// N+1 pattern of calling `count_modlists` + `ModAssociation::get_by_mod_id`
+    /// for each row on the `/mods` listing page.
+    pub fn get_all_for_listing(
+        unavailable_only: bool,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Vec<(Mod, u64, Option<ModAssociation>)>, rusqlite::Error> {
+        let filter = if unavailable_only {
+            "WHERE m.disk_filename IS NULL"
+        } else {
+            ""
+        };
+        let sql = format!(
+            "SELECT m.id, m.disk_filename, m.size, m.xxhash64, m.lost_forever,
+                    COALESCE(counts.c, 0) AS modlist_count,
+                    a.modlist_id, a.source, a.filename, a.name, a.version
+               FROM \"mod\" m
+               LEFT JOIN (
+                 SELECT mod_id, COUNT(*) AS c, MIN(modlist_id) AS first_modlist_id
+                   FROM mod_association GROUP BY mod_id
+               ) counts ON counts.mod_id = m.id
+               LEFT JOIN mod_association a
+                   ON a.mod_id = m.id AND a.modlist_id = counts.first_modlist_id
+             {}
+             ORDER BY m.disk_filename",
+            filter
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map([], |row| {
+                let mod_item = Mod {
+                    id: row.get(0)?,
+                    disk_filename: row.get(1)?,
+                    size: row.get(2)?,
+                    xxhash64: row.get(3)?,
+                    lost_forever: row.get(4)?,
+                };
+                let count: i64 = row.get(5)?;
+                let modlist_id: Option<u64> = row.get(6)?;
+                let first_assoc = match modlist_id {
+                    Some(mid) => {
+                        let source_str: String = row.get(7)?;
+                        let source: ArchiveState =
+                            serde_json::from_str(&source_str).map_err(|e| {
+                                rusqlite::Error::FromSqlConversionFailure(
+                                    7,
+                                    rusqlite::types::Type::Text,
+                                    Box::new(std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        format!("Failed to parse ArchiveState: {}", e),
+                                    )),
+                                )
+                            })?;
+                        Some(ModAssociation {
+                            modlist_id: mid,
+                            mod_id: mod_item.id,
+                            source,
+                            filename: row.get(8)?,
+                            name: row.get::<_, Option<String>>(9)?,
+                            version: row.get::<_, Option<String>>(10)?,
+                        })
+                    }
+                    None => None,
+                };
+                Ok((mod_item, count as u64, first_assoc))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(rows)
     }
 }
 
