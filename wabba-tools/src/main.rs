@@ -269,14 +269,7 @@ async fn main() {
                 directory.display()
             );
 
-            let parallelism = parallel
-                .or_else(|| {
-                    std::thread::available_parallelism()
-                        .ok()
-                        .map(|n| n.get())
-                })
-                .unwrap_or(1)
-                .max(1);
+            let parallelism = (*parallel).max(1);
             let use_cache = !no_cache;
 
             let old_cache = Arc::new(if use_cache {

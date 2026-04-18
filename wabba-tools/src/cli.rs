@@ -60,9 +60,11 @@ pub enum Commands {
         #[arg(long = "no-cache")]
         no_cache: bool,
 
-        /// Number of files to hash in parallel. Defaults to the number of
-        /// available CPUs (minimum 1).
-        #[arg(long = "parallel", short = 'p', value_name = "N")]
-        parallel: Option<usize>,
+        /// Number of files to hash in parallel. Defaults to 1 because the
+        /// download directory is typically on a spinning HDD, where parallel
+        /// reads thrash the disk head and slow throughput. Raise for SSD
+        /// (~4–8) or NVMe (~8–16) sources.
+        #[arg(long = "parallel", short = 'p', value_name = "N", default_value_t = 1)]
+        parallel: usize,
     },
 }
