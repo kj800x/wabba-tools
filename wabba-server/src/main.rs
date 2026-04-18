@@ -35,8 +35,8 @@ use crate::prelude::*;
 use crate::resources::bootstrap::{bootstrap, bootstrap_modlists, bootstrap_mods};
 use crate::resources::{check_mod, check_modlist, hello_world, upload_mod, upload_modlist};
 use crate::web::details_page::{
-    details_page, download_mod, download_modlist, mod_details_page, mod_image, rename_modlist,
-    toggle_lost_forever, toggle_muted,
+    delete_mod, delete_modlist, details_page, download_mod, download_modlist, mod_details_page,
+    mod_image, rename_modlist, toggle_lost_forever, toggle_muted,
 };
 use crate::web::listing_page::{listing_page, mods_listing_page, muted_modlists_page};
 use crate::web::upload_page::{upload_page, upload_post};
@@ -74,6 +74,8 @@ async fn start_http(
             .service(toggle_lost_forever)
             .service(toggle_muted)
             .service(rename_modlist)
+            .service(delete_mod)
+            .service(delete_modlist)
             .service(bootstrap)
             .service(bootstrap_modlists)
             .service(bootstrap_mods)

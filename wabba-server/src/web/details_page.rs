@@ -311,12 +311,14 @@ fn render_source(source: &ArchiveState, mod_id: u64) -> maud::Markup {
 #[get("/mod/{id}")]
 pub async fn mod_details_page(
     id: web::Path<u64>,
+    query: web::Query<std::collections::HashMap<String, String>>,
     pool: web::Data<Pool<SqliteConnectionManager>>,
 ) -> Result<impl Responder, actix_web::Error> {
     let conn = pool
         .get()
         .map_err(actix_web::error::ErrorInternalServerError)?;
     let mod_id = id.into_inner();
+    let show_debug = query.get("debug").map(|s| s == "true").unwrap_or(false);
 
     let mod_item = Mod::get_by_id(mod_id, &conn)
         .map_err(actix_web::error::ErrorInternalServerError)?
@@ -534,6 +536,19 @@ pub async fn mod_details_page(
                                             } @else {
                                                 "Mark as Lost Forever"
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                            @if show_debug {
+                                p.debug-actions style="margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed #e74c3c;" {
+                                    strong { "Debug: " }
+                                    form method="post"
+                                         action=(format!("/mod/{}/delete", mod_item.id))
+                                         onsubmit="return confirm('Delete this mod permanently?\\n\\nThis removes the DB row, all mod associations, and the file on disk. Cannot be undone.');"
+                                         style="display: inline-block;" {
+                                        button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #e74c3c; color: white; font-weight: 500;" {
+                                            "Delete Mod"
                                         }
                                     }
                                 }
@@ -944,6 +959,96 @@ pub async fn download_modlist(
     Ok(named_file.into_response(&req))
 }
 
+#[post("/mod/{id}/delete")]
+pub async fn delete_mod(
+    id: web::Path<u64>,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+    data_dir: web::Data<DataDir>,
+) -> Result<impl Responder, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let mod_id = id.into_inner();
+    let data_dir = data_dir.into_inner();
+
+    let mod_item = Mod::get_by_id(mod_id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .ok_or_else(|| actix_web::error::ErrorNotFound("Mod not found"))?;
+
+    if let Some(disk_filename) = &mod_item.disk_filename {
+        let file_path = data_dir.get_mod_path(disk_filename);
+        if file_path.exists() {
+            if let Err(e) = std::fs::remove_file(&file_path) {
+                log::warn!(
+                    "Failed to remove mod file {}: {}",
+                    file_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    conn.prepare("DELETE FROM mod_association WHERE mod_id = ?1")
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .execute(rusqlite::params![mod_id])
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    conn.prepare("DELETE FROM \"mod\" WHERE id = ?1")
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .execute(rusqlite::params![mod_id])
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    log::info!("Deleted mod {} ({})", mod_id, mod_item.xxhash64);
+
+    Ok(HttpResponse::SeeOther()
+        .append_header(("Location", "/mods"))
+        .finish())
+}
+
+#[post("/modlists/{id}/delete")]
+pub async fn delete_modlist(
+    id: web::Path<u64>,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+    data_dir: web::Data<DataDir>,
+) -> Result<impl Responder, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let modlist_id = id.into_inner();
+    let data_dir = data_dir.into_inner();
+
+    let modlist = Modlist::get_by_id(modlist_id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .ok_or_else(|| actix_web::error::ErrorNotFound("Modlist not found"))?;
+
+    let file_path = data_dir.get_modlist_path(&modlist.filename);
+    if file_path.exists() {
+        if let Err(e) = std::fs::remove_file(&file_path) {
+            log::warn!(
+                "Failed to remove modlist file {}: {}",
+                file_path.display(),
+                e
+            );
+        }
+    }
+
+    conn.prepare("DELETE FROM mod_association WHERE modlist_id = ?1")
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .execute(rusqlite::params![modlist_id])
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    conn.prepare("DELETE FROM modlist WHERE id = ?1")
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .execute(rusqlite::params![modlist_id])
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    log::info!("Deleted modlist {} ({})", modlist_id, modlist.filename);
+
+    Ok(HttpResponse::SeeOther()
+        .append_header(("Location", "/"))
+        .finish())
+}
+
 #[post("/mod/{id}/toggle-lost-forever")]
 pub async fn toggle_lost_forever(
     id: web::Path<u64>,
@@ -1101,12 +1206,14 @@ pub async fn rename_modlist(
 #[get("/modlists/{id}")]
 pub async fn details_page(
     id: web::Path<u64>,
+    query: web::Query<std::collections::HashMap<String, String>>,
     pool: web::Data<Pool<SqliteConnectionManager>>,
 ) -> Result<impl Responder, actix_web::Error> {
     let conn = pool
         .get()
         .map_err(actix_web::error::ErrorInternalServerError)?;
     let archive_id = id.into_inner();
+    let show_debug = query.get("debug").map(|s| s == "true").unwrap_or(false);
 
     let modlist = Modlist::get_by_id(archive_id, &conn)
         .map_err(actix_web::error::ErrorInternalServerError)?
@@ -1200,6 +1307,19 @@ pub async fn details_page(
                                             "Unmute Modlist"
                                         } @else {
                                             "Mute Modlist"
+                                        }
+                                    }
+                                }
+                            }
+                            @if show_debug {
+                                p.debug-actions style="margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed #e74c3c;" {
+                                    strong { "Debug: " }
+                                    form method="post"
+                                         action=(format!("/modlists/{}/delete", modlist.id))
+                                         onsubmit="return confirm('Delete this modlist permanently?\\n\\nThis removes the DB row, all mod associations, and the .wabbajack file on disk. Mods referenced only by this modlist remain. Cannot be undone.');"
+                                         style="display: inline-block;" {
+                                        button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #e74c3c; color: white; font-weight: 500;" {
+                                            "Delete Modlist"
                                         }
                                     }
                                 }
