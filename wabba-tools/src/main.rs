@@ -59,6 +59,25 @@ enum UploadOutcome {
     Failed(u16, String),
 }
 
+/// Probe the server once and return the post-redirect base URL. Reqwest
+/// follows GET redirects transparently but cannot replay a streamed POST
+/// body, so we resolve any redirect chain (e.g. Traefik's HTTP→HTTPS 308)
+/// up front and use the resolved base URL for the rest of the run.
+async fn resolve_base_url(client: &Client, server: &str) -> Result<String, reqwest::Error> {
+    let server = server.trim_end_matches('/');
+    let probe_url = format!("{}/hello", server);
+    let response = client.get(&probe_url).send().await?;
+    let final_url = response.url().as_str();
+    let resolved = final_url
+        .trim_end_matches("/hello")
+        .trim_end_matches('/')
+        .to_string();
+    if resolved != server {
+        log::info!("Resolved server URL {} -> {}", server, resolved);
+    }
+    Ok(resolved)
+}
+
 /// Ask the server whether it already has a file with the given hash. Returns
 /// true when the server reports the hash is already available (304), false
 /// when the server needs the upload (200).
@@ -199,6 +218,14 @@ async fn main() {
             let hash = Hash::compute(&std::fs::read(file).expect("Failed to read file"));
 
             let client = Client::new();
+            let server = match resolve_base_url(&client, server).await {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("Failed to reach server: {}", e);
+                    return;
+                }
+            };
+            let server = server.as_str();
             match upload_file(&client, server, file, &hash).await {
                 Ok(UploadOutcome::Uploaded) => log::info!("Upload successful"),
                 Ok(UploadOutcome::AlreadyPresent) => log::info!("File already exists"),
@@ -216,6 +243,16 @@ async fn main() {
             no_cache,
             parallel,
         } => {
+            let client = Client::new();
+            let server = match resolve_base_url(&client, server).await {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("Failed to reach server: {}", e);
+                    return;
+                }
+            };
+            let server = server.as_str();
+
             let download_directory =
                 DownloadDirectory::new(directory).expect("Failed to open directory");
 
@@ -350,7 +387,6 @@ async fn main() {
             // Sort by filename for deterministic upload order + log output.
             hashed.sort_by(|a, b| a.0.file_name().cmp(&b.0.file_name()));
 
-            let client = Client::new();
             let mut uploaded = 0usize;
             let mut skipped = 0usize;
 
