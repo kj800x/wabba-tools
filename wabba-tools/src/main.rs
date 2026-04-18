@@ -301,49 +301,55 @@ async fn main() {
             let mut set: JoinSet<(PathBuf, Result<String, String>)> = JoinSet::new();
             let total = files.len();
 
+            // Spawn every task up front so the `for` loop returns immediately
+            // and `join_next()` below can start draining (and logging) in
+            // parallel with hashing. Each task waits on the semaphore
+            // internally, so we only have `parallelism` hashers at a time.
             for file in files.into_iter() {
-                let permit = Arc::clone(&sem)
-                    .acquire_owned()
-                    .await
-                    .expect("semaphore not closed");
+                let sem = Arc::clone(&sem);
                 let old_cache = Arc::clone(&old_cache);
                 let new_cache = Arc::clone(&new_cache);
-                set.spawn_blocking(move || {
-                    let _permit = permit;
-                    let filename = file
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or_default()
-                        .to_string();
-                    let result = (|| -> Result<String, String> {
-                        let metadata = std::fs::metadata(&file)
-                            .map_err(|e| format!("stat: {}", e))?;
-                        let (size, mtime_nanos) = file_fingerprint(&metadata);
+                set.spawn(async move {
+                    let permit = sem.acquire_owned().await.expect("semaphore not closed");
+                    tokio::task::spawn_blocking(move || {
+                        let _permit = permit;
+                        let filename = file
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        let result = (|| -> Result<String, String> {
+                            let metadata = std::fs::metadata(&file)
+                                .map_err(|e| format!("stat: {}", e))?;
+                            let (size, mtime_nanos) = file_fingerprint(&metadata);
 
-                        if let Some(cached) =
-                            old_cache.lookup(&filename, size, mtime_nanos)
-                        {
-                            log::debug!("Cache hit for {}", filename);
+                            if let Some(cached) =
+                                old_cache.lookup(&filename, size, mtime_nanos)
+                            {
+                                log::debug!("Cache hit for {}", filename);
+                                new_cache.lock().unwrap().insert(
+                                    filename.clone(),
+                                    size,
+                                    mtime_nanos,
+                                    cached.clone(),
+                                );
+                                return Ok(cached);
+                            }
+
+                            let hash = Hash::compute_file(&file)
+                                .map_err(|e| format!("hash: {}", e))?;
                             new_cache.lock().unwrap().insert(
-                                filename.clone(),
+                                filename,
                                 size,
                                 mtime_nanos,
-                                cached.clone(),
+                                hash.clone(),
                             );
-                            return Ok(cached);
-                        }
-
-                        let hash = Hash::compute_file(&file)
-                            .map_err(|e| format!("hash: {}", e))?;
-                        new_cache.lock().unwrap().insert(
-                            filename,
-                            size,
-                            mtime_nanos,
-                            hash.clone(),
-                        );
-                        Ok(hash)
-                    })();
-                    (file, result)
+                            Ok(hash)
+                        })();
+                        (file, result)
+                    })
+                    .await
+                    .expect("blocking hash task panicked")
                 });
             }
 
