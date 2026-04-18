@@ -368,23 +368,34 @@ pub async fn mod_details_page(
         mods_same_filename_with_assocs.push((related_mod, related_first_assoc));
     }
 
-    // Get mods with the same name from associations (excluding current mod)
+    // Get mods with the same name from associations (excluding current mod).
+    // Use the mod_association.name index to find matching mod ids in a single
+    // query, then fetch each matching mod + its first association. This
+    // replaces a previous O(total_mods) N+1 scan.
     let mods_same_name = if let Some(assoc) = primary_assoc {
         if let Some(ref name) = assoc.name {
-            // Find all mods that have associations with the same name
-            let all_mods =
-                Mod::get_all(&conn).map_err(actix_web::error::ErrorInternalServerError)?;
-            let mut same_name_mods = Vec::new();
-            for other_mod in all_mods {
-                if other_mod.id == mod_id {
+            let matching_ids: Vec<u64> = conn
+                .prepare(
+                    "SELECT DISTINCT mod_id FROM mod_association
+                     WHERE name = ?1 AND mod_id != ?2",
+                )
+                .map_err(actix_web::error::ErrorInternalServerError)?
+                .query_map(rusqlite::params![name, mod_id], |row| row.get(0))
+                .map_err(actix_web::error::ErrorInternalServerError)?
+                .collect::<Result<Vec<u64>, _>>()
+                .map_err(actix_web::error::ErrorInternalServerError)?;
+
+            let mut same_name_mods = Vec::with_capacity(matching_ids.len());
+            for other_id in matching_ids {
+                let Some(other_mod) = Mod::get_by_id(other_id, &conn)
+                    .map_err(actix_web::error::ErrorInternalServerError)?
+                else {
                     continue;
-                }
-                let other_assocs = ModAssociation::get_by_mod_id(other_mod.id, &conn)
+                };
+                let other_assocs = ModAssociation::get_by_mod_id(other_id, &conn)
                     .map_err(actix_web::error::ErrorInternalServerError)?;
-                if other_assocs.iter().any(|a| a.name.as_ref() == Some(name)) {
-                    let other_first_assoc = other_assocs.first().cloned();
-                    same_name_mods.push((other_mod, other_first_assoc));
-                }
+                let other_first_assoc = other_assocs.first().cloned();
+                same_name_mods.push((other_mod, other_first_assoc));
             }
             same_name_mods
         } else {

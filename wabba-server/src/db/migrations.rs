@@ -46,9 +46,9 @@ pub fn migrate(mut conn: PooledConnection<SqliteConnectionManager>) -> Result<()
           CREATE INDEX mod_association_modlist_id_idx ON mod_association(modlist_id);
           CREATE INDEX mod_association_mod_id_idx ON mod_association(mod_id);
       "#}),
-        // M::up( indoc! { r#"
-        //     SQL GOES HERE
-        // "#}),
+        M::up(indoc! { r#"
+          CREATE INDEX mod_association_name_idx ON mod_association(name);
+      "#}),
     ]);
 
     conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))
