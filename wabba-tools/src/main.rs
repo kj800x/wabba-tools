@@ -1,12 +1,17 @@
 use crate::download_dir::DownloadDirectory;
+use crate::sync_cache::{CACHE_FILENAME, SyncCache, file_fingerprint};
 use clap::Parser;
 mod cli;
 mod download_dir;
+mod sync_cache;
 use env_logger::Builder;
 use reqwest::Client;
 use reqwest::header::IF_NONE_MATCH;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use tokio::fs::File;
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 use tokio_util::codec::{BytesCodec, FramedRead};
 use wabba_protocol::{hash::Hash, wabbajack::WabbajackMetadata};
 
@@ -205,39 +210,164 @@ async fn main() {
             }
         }
 
-        cli::Commands::Sync { server, directory } => {
+        cli::Commands::Sync {
+            server,
+            directory,
+            no_cache,
+            parallel,
+        } => {
             let download_directory =
                 DownloadDirectory::new(directory).expect("Failed to open directory");
 
-            let files = download_directory.file_paths();
-            log::info!("Found {} candidate files in {}", files.len(), directory.display());
+            let files: Vec<PathBuf> = download_directory
+                .file_paths()
+                .into_iter()
+                .filter(|p| {
+                    p.file_name().and_then(|n| n.to_str()) != Some(CACHE_FILENAME)
+                })
+                .collect();
+            log::info!(
+                "Found {} candidate files in {}",
+                files.len(),
+                directory.display()
+            );
+
+            let parallelism = parallel
+                .or_else(|| {
+                    std::thread::available_parallelism()
+                        .ok()
+                        .map(|n| n.get())
+                })
+                .unwrap_or(1)
+                .max(1);
+            let use_cache = !no_cache;
+
+            let old_cache = Arc::new(if use_cache {
+                SyncCache::load(directory)
+            } else {
+                SyncCache::default()
+            });
+            if use_cache {
+                log::info!("Loaded {} cached hashes from {}", old_cache.len(), directory.display());
+            } else {
+                log::info!("Cache disabled (--no-cache); rehashing every file");
+            }
+            let new_cache = Arc::new(Mutex::new(SyncCache::default()));
+
+            log::info!(
+                "Hashing {} files with parallelism={}",
+                files.len(),
+                parallelism
+            );
+
+            let sem = Arc::new(Semaphore::new(parallelism));
+            let mut set: JoinSet<(PathBuf, Result<String, String>)> = JoinSet::new();
+            let total = files.len();
+
+            for file in files.into_iter() {
+                let permit = Arc::clone(&sem)
+                    .acquire_owned()
+                    .await
+                    .expect("semaphore not closed");
+                let old_cache = Arc::clone(&old_cache);
+                let new_cache = Arc::clone(&new_cache);
+                set.spawn_blocking(move || {
+                    let _permit = permit;
+                    let filename = file
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    let result = (|| -> Result<String, String> {
+                        let metadata = std::fs::metadata(&file)
+                            .map_err(|e| format!("stat: {}", e))?;
+                        let (size, mtime_nanos) = file_fingerprint(&metadata);
+
+                        if let Some(cached) =
+                            old_cache.lookup(&filename, size, mtime_nanos)
+                        {
+                            log::debug!("Cache hit for {}", filename);
+                            new_cache.lock().unwrap().insert(
+                                filename.clone(),
+                                size,
+                                mtime_nanos,
+                                cached.clone(),
+                            );
+                            return Ok(cached);
+                        }
+
+                        let hash = Hash::compute_file(&file)
+                            .map_err(|e| format!("hash: {}", e))?;
+                        new_cache.lock().unwrap().insert(
+                            filename,
+                            size,
+                            mtime_nanos,
+                            hash.clone(),
+                        );
+                        Ok(hash)
+                    })();
+                    (file, result)
+                });
+            }
+
+            let mut hashed: Vec<(PathBuf, String)> = Vec::with_capacity(total);
+            let mut failed = 0usize;
+            let mut completed = 0usize;
+            while let Some(joined) = set.join_next().await {
+                let (file, result) = joined.expect("hash task panicked");
+                completed += 1;
+                let filename = file
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("<unknown>")
+                    .to_string();
+                match result {
+                    Ok(hash) => {
+                        log::info!("[{}/{}] Hashed {}", completed, total, filename);
+                        hashed.push((file, hash));
+                    }
+                    Err(e) => {
+                        log::error!("[{}/{}] Failed to hash {}: {}", completed, total, filename, e);
+                        failed += 1;
+                    }
+                }
+            }
+
+            // Persist the cache before uploading so an interrupted upload phase
+            // doesn't force a rehash next run.
+            if use_cache {
+                let cache = Arc::try_unwrap(new_cache)
+                    .expect("cache Arc should be unique now")
+                    .into_inner()
+                    .expect("mutex not poisoned");
+                if let Err(e) = cache.save(directory) {
+                    log::warn!("Failed to save hash cache: {}", e);
+                } else {
+                    log::info!("Saved {} hashes to {}", cache.len(), directory.display());
+                }
+            }
+
+            // Sort by filename for deterministic upload order + log output.
+            hashed.sort_by(|a, b| a.0.file_name().cmp(&b.0.file_name()));
 
             let client = Client::new();
             let mut uploaded = 0usize;
             let mut skipped = 0usize;
-            let mut failed = 0usize;
 
-            for (idx, file) in files.iter().enumerate() {
+            for (idx, (file, hash)) in hashed.iter().enumerate() {
                 let filename = file
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("<unknown>");
-                log::info!("[{}/{}] Hashing {}", idx + 1, files.len(), filename);
-                let bytes = match std::fs::read(file) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        log::error!("Failed to read {}: {}", filename, e);
-                        failed += 1;
-                        continue;
-                    }
-                };
-                let hash = Hash::compute(&bytes);
-                drop(bytes);
-
                 let upload_type = upload_type_for(file);
-                match server_has_hash(&client, server, upload_type, &hash).await {
+                match server_has_hash(&client, server, upload_type, hash).await {
                     Ok(true) => {
-                        log::info!("Server already has {} — skipping", filename);
+                        log::info!(
+                            "[{}/{}] Server already has {} — skipping",
+                            idx + 1,
+                            hashed.len(),
+                            filename
+                        );
                         skipped += 1;
                         continue;
                     }
@@ -249,8 +379,8 @@ async fn main() {
                     }
                 }
 
-                log::info!("Uploading {}", filename);
-                match upload_file(&client, server, file, &hash).await {
+                log::info!("[{}/{}] Uploading {}", idx + 1, hashed.len(), filename);
+                match upload_file(&client, server, file, hash).await {
                     Ok(UploadOutcome::Uploaded) => {
                         log::info!("Uploaded {}", filename);
                         uploaded += 1;

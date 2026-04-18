@@ -55,5 +55,14 @@ pub enum Commands {
         /// Path to the directory to sync
         #[arg(value_name = "DIRECTORY")]
         directory: PathBuf,
+
+        /// Skip the local hash cache and rehash every file.
+        #[arg(long = "no-cache")]
+        no_cache: bool,
+
+        /// Number of files to hash in parallel. Defaults to the number of
+        /// available CPUs (minimum 1).
+        #[arg(long = "parallel", short = 'p', value_name = "N")]
+        parallel: Option<usize>,
     },
 }
