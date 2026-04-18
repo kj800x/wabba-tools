@@ -19,7 +19,9 @@ use crate::data_dir::DataDir;
 use crate::db::mod_data::Mod;
 use crate::db::modlist::Modlist;
 use crate::resources::ingest::{ingest_mod, ingest_modlist};
-use crate::resources::upload_validation::{UploadValidationResult, validate_upload_request};
+use crate::resources::upload_validation::{
+    ArchiveType, UploadValidationResult, validate_upload_request,
+};
 
 /// Converts a base64 hash to base64url encoding for use in filenames
 fn base64_to_base64url(base64_hash: &str) -> String {
@@ -138,6 +140,53 @@ pub async fn hello_world() -> impl Responder {
           "Hello, world!"
         }
     }
+}
+
+fn check_hash<A: ArchiveType>(
+    req: &HttpRequest,
+    conn: &r2d2::PooledConnection<SqliteConnectionManager>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let hash = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|x| x.to_str().ok());
+    let hash = match hash {
+        Some(h) => h,
+        None => {
+            return Err(actix_web::error::ErrorBadRequest(
+                "If-None-Match header is required",
+            ));
+        }
+    };
+
+    match A::get_by_hash(hash, conn).map_err(|e| {
+        actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+    })? {
+        Some(archive) if archive.is_available() => Ok(HttpResponse::NotModified().finish()),
+        _ => Ok(HttpResponse::Ok().finish()),
+    }
+}
+
+#[get("/check/modlist")]
+pub async fn check_modlist(
+    req: HttpRequest,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    check_hash::<Modlist>(&req, &conn)
+}
+
+#[get("/check/mod")]
+pub async fn check_mod(
+    req: HttpRequest,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    check_hash::<Mod>(&req, &conn)
 }
 
 #[post("/submit/modlist/{filename}")]

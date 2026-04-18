@@ -33,7 +33,7 @@ use crate::data_dir::DataDir;
 use crate::db::migrations::migrate;
 use crate::prelude::*;
 use crate::resources::bootstrap::{bootstrap, bootstrap_modlists, bootstrap_mods};
-use crate::resources::{hello_world, upload_mod, upload_modlist};
+use crate::resources::{check_mod, check_modlist, hello_world, upload_mod, upload_modlist};
 use crate::web::details_page::{
     details_page, mod_details_page, mod_image, rename_modlist, toggle_lost_forever, toggle_muted,
 };
@@ -60,6 +60,8 @@ async fn start_http(
             .service(hello_world)
             .service(upload_modlist)
             .service(upload_mod)
+            .service(check_modlist)
+            .service(check_mod)
             .service(listing_page)
             .service(mods_listing_page)
             .service(muted_modlists_page)

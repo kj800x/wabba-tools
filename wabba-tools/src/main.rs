@@ -5,6 +5,7 @@ mod download_dir;
 use env_logger::Builder;
 use reqwest::Client;
 use reqwest::header::IF_NONE_MATCH;
+use std::path::Path;
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 use wabba_protocol::{hash::Hash, wabbajack::WabbajackMetadata};
@@ -16,6 +17,7 @@ struct FileComparisonResult {
     extraneous_files: Vec<String>,
 }
 
+#[derive(Clone, Copy)]
 enum UploadType {
     Modlist,
     Mod,
@@ -33,6 +35,78 @@ impl UploadType {
         match self {
             Self::Modlist => "modlist",
             Self::Mod => "mod",
+        }
+    }
+}
+
+fn upload_type_for(path: &Path) -> UploadType {
+    UploadType::from_extension(
+        path.extension()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or_default(),
+    )
+}
+
+enum UploadOutcome {
+    Uploaded,
+    AlreadyPresent,
+    Failed(u16, String),
+}
+
+/// Ask the server whether it already has a file with the given hash. Returns
+/// true when the server reports the hash is already available (304), false
+/// when the server needs the upload (200).
+async fn server_has_hash(
+    client: &Client,
+    server: &str,
+    upload_type: UploadType,
+    hash: &str,
+) -> Result<bool, reqwest::Error> {
+    let url = format!("{}/check/{}", server, upload_type.as_str());
+    let response = client
+        .get(&url)
+        .header(IF_NONE_MATCH, hash)
+        .send()
+        .await?;
+    Ok(response.status().as_u16() == 304)
+}
+
+/// Stream a single file up to the server. The caller is responsible for
+/// deciding whether the upload is needed; this function will submit the body
+/// regardless.
+async fn upload_file(
+    client: &Client,
+    server: &str,
+    file: &Path,
+    hash: &str,
+) -> Result<UploadOutcome, Box<dyn std::error::Error>> {
+    let upload_type = upload_type_for(file);
+    let filename = file
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Invalid filename")?;
+    let url = format!("{}/submit/{}/{}", server, upload_type.as_str(), filename);
+
+    let async_file = File::open(file).await?;
+    let stream = FramedRead::new(async_file, BytesCodec::new());
+    let body = reqwest::Body::wrap_stream(stream);
+
+    log::info!("POST {}", url);
+    let response = client
+        .post(&url)
+        .header(IF_NONE_MATCH, hash)
+        .body(body)
+        .send()
+        .await?;
+
+    let code = response.status().as_u16();
+    match code {
+        200 => Ok(UploadOutcome::Uploaded),
+        304 => Ok(UploadOutcome::AlreadyPresent),
+        _ => {
+            let body = response.text().await.unwrap_or_default();
+            Ok(UploadOutcome::Failed(code, body))
         }
     }
 }
@@ -116,50 +190,92 @@ async fn main() {
         }
 
         cli::Commands::Upload { server, file } => {
-            let upload_type = UploadType::from_extension(
-                file.extension()
-                    .unwrap_or_default()
-                    .to_str()
-                    .unwrap_or_default(),
-            );
-
             log::info!("Computing hash for {}", file.display());
             let hash = Hash::compute(&std::fs::read(file).expect("Failed to read file"));
 
-            let url = format!(
-                "{}/submit/{}/{}",
-                server,
-                upload_type.as_str(),
-                file.file_name().unwrap().to_str().unwrap_or_default()
-            );
-
-            // Open the file asynchronously
-            let file = File::open(file).await.unwrap();
-            let stream = FramedRead::new(file, BytesCodec::new());
-            let body = reqwest::Body::wrap_stream(stream);
-
-            log::info!("POST {}", url);
             let client = Client::new();
-            let response = client
-                .post(&url)
-                .header(IF_NONE_MATCH, hash.to_string())
-                .body(body)
-                .send()
-                .await
-                .unwrap();
-            // .error_for_status()
-            // .unwrap();
+            match upload_file(&client, server, file, &hash).await {
+                Ok(UploadOutcome::Uploaded) => log::info!("Upload successful"),
+                Ok(UploadOutcome::AlreadyPresent) => log::info!("File already exists"),
+                Ok(UploadOutcome::Failed(code, body)) => {
+                    log::error!("Upload failed: {}", code);
+                    log::error!("Response body: {}", body);
+                }
+                Err(e) => log::error!("Upload error: {}", e),
+            }
+        }
 
-            let response_code = response.status().as_u16();
-            match response_code {
-                200 => log::info!("Upload successful"),
-                304 => log::info!("File already exists"),
-                _ => {
-                    log::error!("Upload failed: {}", response_code);
-                    log::error!("Response: {:#?}", response);
-                    log::error!("Response body: {}", response.text().await.unwrap());
+        cli::Commands::Sync { server, directory } => {
+            let download_directory =
+                DownloadDirectory::new(directory).expect("Failed to open directory");
+
+            let files = download_directory.file_paths();
+            log::info!("Found {} candidate files in {}", files.len(), directory.display());
+
+            let client = Client::new();
+            let mut uploaded = 0usize;
+            let mut skipped = 0usize;
+            let mut failed = 0usize;
+
+            for (idx, file) in files.iter().enumerate() {
+                let filename = file
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("<unknown>");
+                log::info!("[{}/{}] Hashing {}", idx + 1, files.len(), filename);
+                let bytes = match std::fs::read(file) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        log::error!("Failed to read {}: {}", filename, e);
+                        failed += 1;
+                        continue;
+                    }
+                };
+                let hash = Hash::compute(&bytes);
+                drop(bytes);
+
+                let upload_type = upload_type_for(file);
+                match server_has_hash(&client, server, upload_type, &hash).await {
+                    Ok(true) => {
+                        log::info!("Server already has {} — skipping", filename);
+                        skipped += 1;
+                        continue;
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        log::error!("Hash check failed for {}: {}", filename, e);
+                        failed += 1;
+                        continue;
+                    }
+                }
+
+                log::info!("Uploading {}", filename);
+                match upload_file(&client, server, file, &hash).await {
+                    Ok(UploadOutcome::Uploaded) => {
+                        log::info!("Uploaded {}", filename);
+                        uploaded += 1;
+                    }
+                    Ok(UploadOutcome::AlreadyPresent) => {
+                        log::info!("Server reported {} already present", filename);
+                        skipped += 1;
+                    }
+                    Ok(UploadOutcome::Failed(code, body)) => {
+                        log::error!("Upload of {} failed: {} — {}", filename, code, body);
+                        failed += 1;
+                    }
+                    Err(e) => {
+                        log::error!("Upload error for {}: {}", filename, e);
+                        failed += 1;
+                    }
                 }
             }
+
+            log::info!(
+                "Sync complete: {} uploaded, {} already present, {} failed",
+                uploaded,
+                skipped,
+                failed
+            );
         }
     }
 

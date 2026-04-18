@@ -42,4 +42,18 @@ pub enum Commands {
         #[arg(value_name = "FILE")]
         file: PathBuf,
     },
+
+    /// Sync a local directory with the server, uploading any files the server
+    /// does not already have. Only the top-level files of the directory are
+    /// considered; subdirectories and `.meta` files are ignored. Files are
+    /// never downloaded from the server.
+    Sync {
+        /// Base URL of the server to upload to
+        #[arg(value_name = "SERVER")]
+        server: String,
+
+        /// Path to the directory to sync
+        #[arg(value_name = "DIRECTORY")]
+        directory: PathBuf,
+    },
 }
