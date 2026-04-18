@@ -1,4 +1,5 @@
-use actix_web::{HttpResponse, Responder, get, post, web};
+use actix_files::NamedFile;
+use actix_web::{HttpRequest, HttpResponse, Responder, get, http::header, post, web};
 use maud::html;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -501,6 +502,11 @@ pub async fn mod_details_page(
                                 } @else {
                                     span.status-badge.unavailable { "Unavailable" }
                                 }
+                                @if mod_item.is_available() {
+                                    a.download-button href=(format!("/mod/{}/download", mod_item.id)) style="display: inline-block; margin-left: 1rem; padding: 0.4rem 0.8rem; border-radius: 4px; background-color: #27ae60; color: white; font-weight: 500; text-decoration: none;" {
+                                        "Download"
+                                    }
+                                }
                             }
                             @if !mod_item.is_available() {
                                 p {
@@ -852,6 +858,81 @@ pub async fn mod_image(
         .body(image_bytes))
 }
 
+#[get("/mod/{id}/download")]
+pub async fn download_mod(
+    id: web::Path<u64>,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+    data_dir: web::Data<DataDir>,
+    req: HttpRequest,
+) -> Result<HttpResponse, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let mod_id = id.into_inner();
+
+    let mod_item = Mod::get_by_id(mod_id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .ok_or_else(|| actix_web::error::ErrorNotFound("Mod not found"))?;
+
+    let disk_filename = mod_item
+        .disk_filename
+        .as_ref()
+        .ok_or_else(|| actix_web::error::ErrorNotFound("Mod is not available on disk"))?;
+
+    let file_path = data_dir.get_mod_path(disk_filename);
+    if !file_path.is_file() {
+        return Err(actix_web::error::ErrorNotFound("Mod file missing on disk"));
+    }
+
+    let named_file = NamedFile::open_async(&file_path).await.map_err(|e| {
+        actix_web::error::ErrorInternalServerError(format!("Failed to open mod file: {}", e))
+    })?;
+    let named_file = named_file.set_content_disposition(header::ContentDisposition {
+        disposition: header::DispositionType::Attachment,
+        parameters: vec![header::DispositionParam::Filename(disk_filename.clone())],
+    });
+
+    Ok(named_file.into_response(&req))
+}
+
+#[get("/modlists/{id}/download")]
+pub async fn download_modlist(
+    id: web::Path<u64>,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+    data_dir: web::Data<DataDir>,
+    req: HttpRequest,
+) -> Result<HttpResponse, actix_web::Error> {
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let modlist_id = id.into_inner();
+
+    let modlist = Modlist::get_by_id(modlist_id, &conn)
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .ok_or_else(|| actix_web::error::ErrorNotFound("Modlist not found"))?;
+
+    if !modlist.available {
+        return Err(actix_web::error::ErrorNotFound("Modlist is not available"));
+    }
+
+    let file_path = data_dir.get_modlist_path(&modlist.filename);
+    if !file_path.is_file() {
+        return Err(actix_web::error::ErrorNotFound(
+            "Modlist file missing on disk",
+        ));
+    }
+
+    let named_file = NamedFile::open_async(&file_path).await.map_err(|e| {
+        actix_web::error::ErrorInternalServerError(format!("Failed to open modlist file: {}", e))
+    })?;
+    let named_file = named_file.set_content_disposition(header::ContentDisposition {
+        disposition: header::DispositionType::Attachment,
+        parameters: vec![header::DispositionParam::Filename(modlist.filename.clone())],
+    });
+
+    Ok(named_file.into_response(&req))
+}
+
 #[post("/mod/{id}/toggle-lost-forever")]
 pub async fn toggle_lost_forever(
     id: web::Path<u64>,
@@ -1085,6 +1166,11 @@ pub async fn details_page(
                                     input type="text" name="new_filename" value=(modlist.filename.clone()) style="padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; margin-right: 0.5rem;" required;
                                     button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #27ae60; color: white; font-weight: 500;" {
                                         "Rename"
+                                    }
+                                }
+                                @if modlist.available {
+                                    a.download-button href=(format!("/modlists/{}/download", modlist.id)) style="display: inline-block; margin-left: 0.5rem; padding: 0.4rem 0.8rem; border-radius: 4px; background-color: #27ae60; color: white; font-weight: 500; text-decoration: none;" {
+                                        "Download"
                                     }
                                 }
                             }
