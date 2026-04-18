@@ -6,7 +6,7 @@ use std::time::UNIX_EPOCH;
 
 pub const CACHE_FILENAME: &str = ".wabba-sync-cache.json";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct SyncCache {
     entries: HashMap<String, CacheEntry>,
 }
@@ -61,10 +61,22 @@ impl SyncCache {
         }
     }
 
+    /// Serialize to a temp file and rename over the real cache path. The
+    /// rename is atomic within a single filesystem, so an interrupted write
+    /// leaves either the previous file intact or the new one — never a
+    /// half-written JSON that would fail to parse on the next run.
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
         let path = cache_path(dir);
+        let tmp_name = format!(
+            "{}.tmp",
+            path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| CACHE_FILENAME.to_string())
+        );
+        let tmp_path = path.with_file_name(tmp_name);
         let json = serde_json::to_string(self).expect("SyncCache serializes");
-        fs::write(path, json)
+        fs::write(&tmp_path, json)?;
+        fs::rename(&tmp_path, &path)
     }
 
     pub fn lookup(&self, filename: &str, size: u64, mtime_nanos: i128) -> Option<String> {

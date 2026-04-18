@@ -353,6 +353,11 @@ async fn main() {
                 });
             }
 
+            // Flush the cache every N completed hashes so ctrl-c during the
+            // hash phase loses at most N-1 entries of work. The atomic
+            // save() keeps the on-disk file always consistent.
+            const CACHE_FLUSH_INTERVAL: usize = 50;
+
             let mut hashed: Vec<(PathBuf, String)> = Vec::with_capacity(total);
             let mut failed = 0usize;
             let mut completed = 0usize;
@@ -374,10 +379,23 @@ async fn main() {
                         failed += 1;
                     }
                 }
+
+                if use_cache && completed % CACHE_FLUSH_INTERVAL == 0 {
+                    let snapshot = new_cache.lock().unwrap().clone();
+                    if let Err(e) = snapshot.save(directory) {
+                        log::warn!("Cache flush failed at {} entries: {}", completed, e);
+                    } else {
+                        log::debug!(
+                            "Flushed cache ({}/{} files hashed)",
+                            completed,
+                            total
+                        );
+                    }
+                }
             }
 
-            // Persist the cache before uploading so an interrupted upload phase
-            // doesn't force a rehash next run.
+            // Final save before uploads — covers the last partial batch and
+            // any error paths that skipped the interval flush.
             if use_cache {
                 let cache = Arc::try_unwrap(new_cache)
                     .expect("cache Arc should be unique now")
