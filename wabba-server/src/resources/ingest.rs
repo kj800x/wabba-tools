@@ -16,15 +16,15 @@ pub fn ingest_mod(
     path: &Path,
     conn: &PooledConnection<SqliteConnectionManager>,
 ) -> Result<(), actix_web::Error> {
-    let size = std::fs::metadata(&path).unwrap().len() as u64;
+    let size = std::fs::metadata(path).unwrap().len() as u64;
 
     // Check if file was in DB but unavailable - if so, mark as available; otherwise create new
-    match Mod::get_by_size_and_hash(size, hash, &conn)
+    match Mod::get_by_size_and_hash(size, hash, conn)
         .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)))?
     {
         Some(stored_mod) => {
             log::info!("Mod present in db, setting disk filename");
-            stored_mod.set_disk_filename(filename, &conn).map_err(|e| {
+            stored_mod.set_disk_filename(filename, conn).map_err(|e| {
                 actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
             })?;
         }
@@ -34,10 +34,10 @@ pub fn ingest_mod(
             let mod_egg = ModEgg {
                 disk_filename: Some(filename.to_string()),
                 xxhash64: hash.to_string(),
-                size: size,
+                size,
             };
 
-            mod_egg.create(&conn).map_err(|e| {
+            mod_egg.create(conn).map_err(|e| {
                 actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
             })?;
         }
@@ -56,7 +56,7 @@ pub fn ingest_modlist(
     let metadata = WabbajackMetadata::load(path).expect("Failed to load Wabbajack metadata");
 
     // Check if modlist already exists - update if needed, otherwise create new
-    let modlist = match Modlist::get_by_filename(&filename, &conn)
+    let modlist = match Modlist::get_by_filename(filename, conn)
         .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)))?
     {
         Some(existing) => {
@@ -68,11 +68,11 @@ pub fn ingest_modlist(
                 name: metadata.name.clone(),
                 version: metadata.version.clone(),
                 xxhash64: hash.to_string(),
-                size: size,
+                size,
                 available: true,
                 muted: existing.muted,
             };
-            updated.update(&conn).map_err(|e| {
+            updated.update(conn).map_err(|e| {
                 actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
             })?;
             updated
@@ -85,11 +85,11 @@ pub fn ingest_modlist(
                 name: metadata.name.clone(),
                 version: metadata.version.clone(),
                 xxhash64: hash.to_string(),
-                size: size,
+                size,
                 available: true,
             };
 
-            modlist_egg.create(&conn).map_err(|e| {
+            modlist_egg.create(conn).map_err(|e| {
                 actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
             })?
         }
@@ -100,10 +100,10 @@ pub fn ingest_modlist(
     // Associate required mods
     for archive in metadata.required_archives() {
         // Find or create the Mod entry (unique file identified by size + hash)
-        let mod_to_associate = match Mod::get_by_size_and_hash(archive.size, &archive.hash, &conn)
+        let mod_to_associate = match Mod::get_by_size_and_hash(archive.size, &archive.hash, conn)
             .map_err(|e| {
-            actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
-        })? {
+                actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+            })? {
             Some(existing_mod) => existing_mod,
             None => {
                 // Create new mod entry
@@ -113,7 +113,7 @@ pub fn ingest_modlist(
                     size: archive.size,
                 };
 
-                let created_mod = mod_egg.create(&conn).map_err(|e| {
+                let created_mod = mod_egg.create(conn).map_err(|e| {
                     actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
                 })?;
 
@@ -124,7 +124,7 @@ pub fn ingest_modlist(
 
         // Create or update the ModAssociation with modlist-specific metadata
         // Check if association already exists
-        match ModAssociation::get_by_modlist_and_mod(modlist.id, mod_to_associate.id, &conn)
+        match ModAssociation::get_by_modlist_and_mod(modlist.id, mod_to_associate.id, conn)
             .map_err(|e| {
                 actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
             })? {
@@ -134,7 +134,7 @@ pub fn ingest_modlist(
                 existing_assoc.filename = archive.filename.clone();
                 existing_assoc.name = archive.name();
                 existing_assoc.version = archive.version();
-                existing_assoc.update(&conn).map_err(|e| {
+                existing_assoc.update(conn).map_err(|e| {
                     actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
                 })?;
                 log::info!("Updated mod association: {:#?}", existing_assoc);
@@ -150,7 +150,7 @@ pub fn ingest_modlist(
                 };
 
                 // Create new association
-                association_egg.create(&conn).map_err(|e| {
+                association_egg.create(conn).map_err(|e| {
                     actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
                 })?;
                 log::info!("Created new mod association");

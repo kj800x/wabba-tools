@@ -82,9 +82,7 @@ impl ModAssociation {
              ORDER BY filename",
         )?;
         let associations = stmt
-            .query_map(params![modlist_id], |row| {
-                Ok(ModAssociation::from_row(row)?)
-            })?
+            .query_map(params![modlist_id], ModAssociation::from_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(associations)
@@ -101,7 +99,7 @@ impl ModAssociation {
              ORDER BY modlist_id",
         )?;
         let associations = stmt
-            .query_map(params![mod_id], |row| Ok(ModAssociation::from_row(row)?))?
+            .query_map(params![mod_id], ModAssociation::from_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(associations)

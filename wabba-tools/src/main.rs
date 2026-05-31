@@ -88,11 +88,7 @@ async fn server_has_hash(
     hash: &str,
 ) -> Result<bool, reqwest::Error> {
     let url = format!("{}/check/{}", server, upload_type.as_str());
-    let response = client
-        .get(&url)
-        .header(IF_NONE_MATCH, hash)
-        .send()
-        .await?;
+    let response = client.get(&url).header(IF_NONE_MATCH, hash).send().await?;
     Ok(response.status().as_u16() == 304)
 }
 
@@ -150,13 +146,13 @@ fn compare_file_lists(
     };
 
     for file in files_in_download_dir {
-        if !required_files.contains(&file) {
+        if !required_files.contains(file) {
             result.extraneous_files.push(file.clone());
         }
     }
 
     for file in required_files {
-        if files_in_download_dir.contains(&file) {
+        if files_in_download_dir.contains(file) {
             result.satisfied_files.push(file.clone());
         } else {
             result.missing_files.push(file.clone());
@@ -259,9 +255,7 @@ async fn main() {
             let files: Vec<PathBuf> = download_directory
                 .file_paths()
                 .into_iter()
-                .filter(|p| {
-                    p.file_name().and_then(|n| n.to_str()) != Some(CACHE_FILENAME)
-                })
+                .filter(|p| p.file_name().and_then(|n| n.to_str()) != Some(CACHE_FILENAME))
                 .collect();
             log::info!(
                 "Found {} candidate files in {}",
@@ -278,7 +272,11 @@ async fn main() {
                 SyncCache::default()
             });
             if use_cache {
-                log::info!("Loaded {} cached hashes from {}", old_cache.len(), directory.display());
+                log::info!(
+                    "Loaded {} cached hashes from {}",
+                    old_cache.len(),
+                    directory.display()
+                );
             } else {
                 log::info!("Cache disabled (--no-cache); rehashing every file");
             }
@@ -312,13 +310,11 @@ async fn main() {
                             .unwrap_or_default()
                             .to_string();
                         let result = (|| -> Result<String, String> {
-                            let metadata = std::fs::metadata(&file)
-                                .map_err(|e| format!("stat: {}", e))?;
+                            let metadata =
+                                std::fs::metadata(&file).map_err(|e| format!("stat: {}", e))?;
                             let (size, mtime_nanos) = file_fingerprint(&metadata);
 
-                            if let Some(cached) =
-                                old_cache.lookup(&filename, size, mtime_nanos)
-                            {
+                            if let Some(cached) = old_cache.lookup(&filename, size, mtime_nanos) {
                                 log::debug!("Cache hit for {}", filename);
                                 new_cache.lock().unwrap().insert(
                                     filename.clone(),
@@ -329,8 +325,8 @@ async fn main() {
                                 return Ok(cached);
                             }
 
-                            let hash = Hash::compute_file(&file)
-                                .map_err(|e| format!("hash: {}", e))?;
+                            let hash =
+                                Hash::compute_file(&file).map_err(|e| format!("hash: {}", e))?;
                             new_cache.lock().unwrap().insert(
                                 filename,
                                 size,
@@ -368,21 +364,23 @@ async fn main() {
                         hashed.push((file, hash));
                     }
                     Err(e) => {
-                        log::error!("[{}/{}] Failed to hash {}: {}", completed, total, filename, e);
+                        log::error!(
+                            "[{}/{}] Failed to hash {}: {}",
+                            completed,
+                            total,
+                            filename,
+                            e
+                        );
                         failed += 1;
                     }
                 }
 
-                if use_cache && completed % CACHE_FLUSH_INTERVAL == 0 {
+                if use_cache && completed.is_multiple_of(CACHE_FLUSH_INTERVAL) {
                     let snapshot = new_cache.lock().unwrap().clone();
                     if let Err(e) = snapshot.save(directory) {
                         log::warn!("Cache flush failed at {} entries: {}", completed, e);
                     } else {
-                        log::debug!(
-                            "Flushed cache ({}/{} files hashed)",
-                            completed,
-                            total
-                        );
+                        log::debug!("Flushed cache ({}/{} files hashed)", completed, total);
                     }
                 }
             }

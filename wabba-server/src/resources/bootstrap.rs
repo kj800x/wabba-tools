@@ -24,7 +24,7 @@ fn bootstrap_modlists_impl(
         let file_name_os = modlist_file.file_name();
         let filename = file_name_os.to_str().unwrap();
         let hash = Hash::compute(&std::fs::read(&path).unwrap());
-        ingest_modlist(&filename, &hash, &path, &conn)?;
+        ingest_modlist(filename, &hash, &path, conn)?;
     }
 
     Ok(())
@@ -52,7 +52,7 @@ fn bootstrap_mods_impl(
             .expect("Failed to convert file name to string");
         log::info!("Processing mod file: {:?}", filename);
         let hash = Hash::compute(&std::fs::read(&path).expect("Failed to read mod file"));
-        ingest_mod(&filename, &hash, &path, &conn)?;
+        ingest_mod(filename, &hash, &path, conn)?;
     }
 
     Ok(())

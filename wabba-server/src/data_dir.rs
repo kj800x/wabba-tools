@@ -10,14 +10,11 @@ impl DataDir {
             std::fs::create_dir_all(&path).unwrap();
         }
         if !path.is_dir() {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Path is not a directory",
-            )));
+            return Err(Box::new(std::io::Error::other("Path is not a directory")));
         }
 
-        std::fs::create_dir_all(&path.join("Modlists")).unwrap();
-        std::fs::create_dir_all(&path.join("Downloads")).unwrap();
+        std::fs::create_dir_all(path.join("Modlists")).unwrap();
+        std::fs::create_dir_all(path.join("Downloads")).unwrap();
 
         Ok(DataDir(path))
     }

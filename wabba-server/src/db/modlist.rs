@@ -87,7 +87,7 @@ impl Modlist {
     ) -> Result<Vec<Self>, rusqlite::Error> {
         let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available, muted FROM modlist ORDER BY name, version DESC")?;
         let archives = stmt
-            .query_map([], |row| Ok(Modlist::from_row(row)?))?
+            .query_map([], Modlist::from_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(archives)
@@ -98,7 +98,7 @@ impl Modlist {
     ) -> Result<Vec<Self>, rusqlite::Error> {
         let mut stmt = conn.prepare("SELECT id, filename, name, version, size, xxhash64, available, muted FROM modlist WHERE muted = TRUE ORDER BY name, version DESC")?;
         let archives = stmt
-            .query_map([], |row| Ok(Modlist::from_row(row)?))?
+            .query_map([], Modlist::from_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(archives)
