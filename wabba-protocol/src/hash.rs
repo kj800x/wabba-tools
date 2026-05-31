@@ -14,9 +14,8 @@ impl Hash {
         let hash_bytes = hash.to_le_bytes();
 
         // Format in base64
-        let hash_base64 = BASE64_STANDARD.encode(&hash_bytes);
 
-        hash_base64
+        BASE64_STANDARD.encode(hash_bytes)
     }
 
     /// Stream a file through xxhash64 without loading the whole file into

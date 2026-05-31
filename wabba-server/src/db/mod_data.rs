@@ -127,7 +127,7 @@ impl Mod {
             "SELECT id, disk_filename, size, xxhash64, lost_forever FROM \"mod\" ORDER BY disk_filename",
         )?;
         let mods = stmt
-            .query_map([], |row| Ok(Mod::from_row(row)?))?
+            .query_map([], Mod::from_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(mods)
@@ -141,7 +141,7 @@ impl Mod {
             "SELECT id, disk_filename, size, xxhash64, lost_forever FROM \"mod\" WHERE disk_filename IS NULL",
         )?;
         let mods = stmt
-            .query_map([], |row| Ok(Mod::from_row(row)?))?
+            .query_map([], Mod::from_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(mods)
@@ -159,7 +159,7 @@ impl Mod {
              ORDER BY \"mod\".disk_filename",
         )?;
         let mods = stmt
-            .query_map(params![modlist_id], |row| Ok(Mod::from_row(row)?))?
+            .query_map(params![modlist_id], Mod::from_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(mods)
@@ -198,9 +198,9 @@ impl Mod {
 
         let new_value = !self.lost_forever;
         conn.prepare("UPDATE \"mod\" SET lost_forever = ?1 WHERE id = ?2")
-            .map_err(|e| ToggleLostForeverError::DatabaseError(e))?
+            .map_err(ToggleLostForeverError::DatabaseError)?
             .execute(params![new_value, self.id])
-            .map_err(|e| ToggleLostForeverError::DatabaseError(e))?;
+            .map_err(ToggleLostForeverError::DatabaseError)?;
 
         Ok(())
     }
@@ -217,7 +217,7 @@ impl Mod {
              ORDER BY modlist.name"
         )?;
         let modlists = stmt
-            .query_map(params![self.id], |row| Ok(Modlist::from_row(row)?))?
+            .query_map(params![self.id], Modlist::from_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(modlists)
@@ -247,9 +247,7 @@ impl Mod {
              ORDER BY id",
         )?;
         let mods = stmt
-            .query_map(params![disk_filename, exclude_id], |row| {
-                Ok(Mod::from_row(row)?)
-            })?
+            .query_map(params![disk_filename, exclude_id], Mod::from_row)?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(mods)

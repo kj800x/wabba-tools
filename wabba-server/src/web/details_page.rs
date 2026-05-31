@@ -977,14 +977,10 @@ pub async fn delete_mod(
 
     if let Some(disk_filename) = &mod_item.disk_filename {
         let file_path = data_dir.get_mod_path(disk_filename);
-        if file_path.exists() {
-            if let Err(e) = std::fs::remove_file(&file_path) {
-                log::warn!(
-                    "Failed to remove mod file {}: {}",
-                    file_path.display(),
-                    e
-                );
-            }
+        if file_path.exists()
+            && let Err(e) = std::fs::remove_file(&file_path)
+        {
+            log::warn!("Failed to remove mod file {}: {}", file_path.display(), e);
         }
     }
 
@@ -1022,14 +1018,14 @@ pub async fn delete_modlist(
         .ok_or_else(|| actix_web::error::ErrorNotFound("Modlist not found"))?;
 
     let file_path = data_dir.get_modlist_path(&modlist.filename);
-    if file_path.exists() {
-        if let Err(e) = std::fs::remove_file(&file_path) {
-            log::warn!(
-                "Failed to remove modlist file {}: {}",
-                file_path.display(),
-                e
-            );
-        }
+    if file_path.exists()
+        && let Err(e) = std::fs::remove_file(&file_path)
+    {
+        log::warn!(
+            "Failed to remove modlist file {}: {}",
+            file_path.display(),
+            e
+        );
     }
 
     conn.prepare("DELETE FROM mod_association WHERE modlist_id = ?1")
@@ -1155,12 +1151,11 @@ pub async fn rename_modlist(
     // Check if new filename is already taken
     if let Some(existing) = Modlist::get_by_filename(&new_filename, &conn)
         .map_err(actix_web::error::ErrorInternalServerError)?
+        && existing.id != modlist_id
     {
-        if existing.id != modlist_id {
-            return Err(actix_web::error::ErrorBadRequest(
-                "A modlist with this filename already exists",
-            ));
-        }
+        return Err(actix_web::error::ErrorBadRequest(
+            "A modlist with this filename already exists",
+        ));
     }
 
     // Check if file exists on disk with new filename

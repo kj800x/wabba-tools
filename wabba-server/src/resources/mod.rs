@@ -159,9 +159,9 @@ fn check_hash<A: ArchiveType>(
         }
     };
 
-    match A::get_by_hash(hash, conn).map_err(|e| {
-        actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
-    })? {
+    match A::get_by_hash(hash, conn)
+        .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Database error: {}", e)))?
+    {
         Some(archive) if archive.is_available() => Ok(HttpResponse::NotModified().finish()),
         _ => Ok(HttpResponse::Ok().finish()),
     }
