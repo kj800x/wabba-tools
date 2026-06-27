@@ -228,6 +228,76 @@ pub async fn resolve_hash(
     Ok(HttpResponse::NotFound().finish())
 }
 
+/// One mod required by a modlist, as reported to the `fetch-mods` CLI command.
+/// `filename` is the modlist-specific download name; `available` is true when
+/// the server has the file archived on disk and can serve it.
+#[derive(serde::Serialize)]
+struct RequiredMod {
+    id: u64,
+    xxhash64: String,
+    filename: String,
+    size: u64,
+    available: bool,
+}
+
+#[derive(serde::Serialize)]
+struct ModlistManifest {
+    modlist_filename: String,
+    mods: Vec<RequiredMod>,
+}
+
+/// Lists every mod required by the modlist identified by the `If-None-Match`
+/// hash, with the filename and availability the `fetch-mods` command needs to
+/// download what is missing. 404 when the hash is not a known modlist.
+#[get("/modlist/mods")]
+pub async fn modlist_mods(
+    req: HttpRequest,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let hash = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|x| x.to_str().ok());
+    let hash = match hash {
+        Some(h) => h.to_string(),
+        None => {
+            return Err(actix_web::error::ErrorBadRequest(
+                "If-None-Match header is required",
+            ));
+        }
+    };
+
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    let db_err = |e: rusqlite::Error| {
+        actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+    };
+
+    let modlist = match Modlist::get_by_hash(&hash, &conn).map_err(db_err)? {
+        Some(modlist) => modlist,
+        None => return Ok(HttpResponse::NotFound().finish()),
+    };
+
+    let mods = Mod::get_with_filenames_by_modlist_id(modlist.id, &conn)
+        .map_err(db_err)?
+        .into_iter()
+        .map(|(m, filename)| RequiredMod {
+            id: m.id,
+            available: m.is_available(),
+            xxhash64: m.xxhash64,
+            size: m.size,
+            filename,
+        })
+        .collect();
+
+    Ok(HttpResponse::Ok().json(ModlistManifest {
+        modlist_filename: modlist.filename,
+        mods,
+    }))
+}
+
 #[get("/check/modlist")]
 pub async fn check_modlist(
     req: HttpRequest,

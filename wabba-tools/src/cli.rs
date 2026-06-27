@@ -107,4 +107,31 @@ pub enum Commands {
         #[arg(long = "parallel", short = 'p', value_name = "N", default_value_t = 1)]
         parallel: usize,
     },
+
+    /// Fetch every mod required by a modlist from the server into a local
+    /// downloads directory. Mods already present (matching filename and
+    /// xxhash64) are skipped; only mods the server has archived can be
+    /// fetched. Each download is verified against its expected hash.
+    FetchMods {
+        /// Base URL of the server to fetch from
+        #[arg(value_name = "SERVER")]
+        server: String,
+
+        /// Path to the local downloads directory to populate
+        #[arg(value_name = "DIRECTORY")]
+        directory: PathBuf,
+
+        /// xxhash64 of the modlist whose required mods should be fetched
+        #[arg(value_name = "MODLIST_XXHASH64")]
+        modlist: String,
+
+        /// Skip the local hash cache and rehash every candidate file.
+        #[arg(long = "no-cache")]
+        no_cache: bool,
+
+        /// Number of already-present files to hash in parallel (defaults to 1,
+        /// HDD-friendly; raise for SSD/NVMe sources).
+        #[arg(long = "parallel", short = 'p', value_name = "N", default_value_t = 1)]
+        parallel: usize,
+    },
 }

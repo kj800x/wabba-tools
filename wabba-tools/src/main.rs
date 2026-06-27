@@ -7,11 +7,13 @@ mod download_dir;
 mod hashing;
 mod sync_cache;
 use env_logger::Builder;
+use futures_util::StreamExt;
 use reqwest::Client;
 use reqwest::header::IF_NONE_MATCH;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use tokio_util::codec::{BytesCodec, FramedRead};
 use wabba_protocol::{hash::Hash, wabbajack::WabbajackMetadata};
 
@@ -126,6 +128,94 @@ fn meta_path_for(path: &Path) -> PathBuf {
     let mut os = path.to_path_buf().into_os_string();
     os.push(".meta");
     PathBuf::from(os)
+}
+
+/// One mod required by a modlist, as returned by `GET /modlist/mods`. The
+/// server also sends `size`, which serde ignores here.
+#[derive(serde::Deserialize)]
+struct RequiredMod {
+    id: u64,
+    xxhash64: String,
+    filename: String,
+    available: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct ModlistManifest {
+    modlist_filename: String,
+    mods: Vec<RequiredMod>,
+}
+
+/// Fetch the list of mods required by a modlist (identified by hash). Returns
+/// `None` when the server does not know the modlist (404).
+async fn fetch_modlist_manifest(
+    client: &Client,
+    server: &str,
+    modlist_hash: &str,
+) -> Result<Option<ModlistManifest>, reqwest::Error> {
+    let url = format!("{}/modlist/mods", server);
+    let response = client
+        .get(&url)
+        .header(IF_NONE_MATCH, modlist_hash)
+        .send()
+        .await?;
+    if response.status().as_u16() == 404 {
+        return Ok(None);
+    }
+    let manifest = response
+        .error_for_status()?
+        .json::<ModlistManifest>()
+        .await?;
+    Ok(Some(manifest))
+}
+
+/// Download one mod into `directory` under `required.filename`, streaming to a
+/// temporary `.part` file, verifying its hash, then atomically renaming into
+/// place. The caller only invokes this when the destination is missing, so an
+/// existing destination is never silently overwritten by this command.
+async fn download_required_mod(
+    client: &Client,
+    server: &str,
+    required: &RequiredMod,
+    directory: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let url = format!("{}/mod/{}/download", server, required.id);
+    let response = client.get(&url).send().await?.error_for_status()?;
+
+    let part_path = directory.join(format!("{}.part", required.filename));
+    let mut file = File::create(&part_path).await?;
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&part_path).await;
+                return Err(Box::new(e));
+            }
+        };
+        if let Err(e) = file.write_all(&chunk).await {
+            let _ = tokio::fs::remove_file(&part_path).await;
+            return Err(Box::new(e));
+        }
+    }
+    file.flush().await?;
+    drop(file);
+
+    // Verify the downloaded bytes match the expected hash before publishing.
+    let verify_path = part_path.clone();
+    let actual = tokio::task::spawn_blocking(move || Hash::compute_file(&verify_path)).await??;
+    if actual != required.xxhash64 {
+        let _ = tokio::fs::remove_file(&part_path).await;
+        return Err(format!(
+            "hash mismatch after download: expected {}, got {}",
+            required.xxhash64, actual
+        )
+        .into());
+    }
+
+    let final_path = directory.join(&required.filename);
+    tokio::fs::rename(&part_path, &final_path).await?;
+    Ok(())
 }
 
 /// Stream a single file up to the server. The caller is responsible for
@@ -541,6 +631,131 @@ async fn main() {
                     failed
                 );
             }
+        }
+
+        cli::Commands::FetchMods {
+            server,
+            directory,
+            modlist,
+            no_cache,
+            parallel,
+        } => {
+            if !directory.is_dir() {
+                log::error!("Download directory does not exist: {}", directory.display());
+                return;
+            }
+
+            let client = Client::new();
+            let server = match resolve_base_url(&client, server).await {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("Failed to reach server: {}", e);
+                    return;
+                }
+            };
+            let server = server.as_str();
+
+            let manifest = match fetch_modlist_manifest(&client, server, modlist).await {
+                Ok(Some(m)) => m,
+                Ok(None) => {
+                    log::error!("Modlist {} not found on the server", modlist);
+                    return;
+                }
+                Err(e) => {
+                    log::error!("Failed to fetch modlist info: {}", e);
+                    return;
+                }
+            };
+            log::info!(
+                "Modlist {} requires {} mods",
+                manifest.modlist_filename,
+                manifest.mods.len()
+            );
+
+            // Hash only the required mods that already exist locally (by their
+            // expected filename), so we never rehash the whole directory. The
+            // sync cache makes repeat runs cheap.
+            let existing_paths: Vec<PathBuf> = manifest
+                .mods
+                .iter()
+                .map(|m| directory.join(&m.filename))
+                .filter(|p| p.is_file())
+                .collect();
+
+            let hashing::HashResults {
+                hashed,
+                failed: hash_failed,
+            } = hash_files_with_cache(directory, existing_paths, !no_cache, (*parallel).max(1))
+                .await;
+
+            let mut local_hashes: HashMap<String, String> = HashMap::new();
+            for (path, hash) in hashed {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    local_hashes.insert(name.to_string(), hash);
+                }
+            }
+
+            let total = manifest.mods.len();
+            let mut downloaded = 0usize;
+            let mut present = 0usize;
+            let mut unavailable = 0usize;
+            let mut conflicts = 0usize;
+            let mut failed = hash_failed;
+
+            for (idx, required) in manifest.mods.iter().enumerate() {
+                let prefix = format!("[{}/{}]", idx + 1, total);
+
+                match local_hashes.get(&required.filename) {
+                    Some(hash) if hash == &required.xxhash64 => {
+                        log::debug!("{} {} already present", prefix, required.filename);
+                        present += 1;
+                        continue;
+                    }
+                    Some(_) => {
+                        // A different file occupies the expected name; don't
+                        // clobber it. Leave resolution to the user.
+                        log::warn!(
+                            "{} {} exists with a different hash — leaving it (delete it and re-run to refetch)",
+                            prefix,
+                            required.filename
+                        );
+                        conflicts += 1;
+                        continue;
+                    }
+                    None => {}
+                }
+
+                if !required.available {
+                    log::warn!(
+                        "{} {} is not archived on the server — cannot fetch",
+                        prefix,
+                        required.filename
+                    );
+                    unavailable += 1;
+                    continue;
+                }
+
+                log::info!("{} Fetching {}", prefix, required.filename);
+                match download_required_mod(&client, server, required, directory).await {
+                    Ok(()) => {
+                        log::info!("{} Fetched {}", prefix, required.filename);
+                        downloaded += 1;
+                    }
+                    Err(e) => {
+                        log::error!("{} Failed to fetch {}: {}", prefix, required.filename, e);
+                        failed += 1;
+                    }
+                }
+            }
+
+            log::info!(
+                "Fetch complete: {} downloaded, {} already present, {} unavailable, {} conflicts, {} errors",
+                downloaded,
+                present,
+                unavailable,
+                conflicts,
+                failed
+            );
         }
     }
 
