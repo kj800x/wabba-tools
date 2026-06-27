@@ -67,4 +67,44 @@ pub enum Commands {
         #[arg(long = "parallel", short = 'p', value_name = "N", default_value_t = 1)]
         parallel: usize,
     },
+
+    /// Prune archived files from a local downloads directory that are not
+    /// reachable from any `--keep` hash. A file is deleted only when the server
+    /// already has it archived AND it is not kept; files the server has not
+    /// archived are left untouched. `.meta` sidecar files are removed alongside
+    /// the archive they belong to. Defaults to a dry run — you must pass
+    /// `--dry-run false` to actually delete.
+    Prune {
+        /// Base URL of the server to consult
+        #[arg(value_name = "SERVER")]
+        server: String,
+
+        /// Path to the local downloads directory to prune
+        #[arg(value_name = "DIRECTORY")]
+        directory: PathBuf,
+
+        /// xxhash64 of a mod or modlist file to keep. When a modlist is named,
+        /// every mod it requires is kept too. Repeatable; at least one required.
+        #[arg(long = "keep", value_name = "XXHASH64", required = true)]
+        keep: Vec<String>,
+
+        /// When true (the default), report what would be deleted without
+        /// touching anything. Pass `--dry-run false` to perform real deletes.
+        #[arg(
+            long = "dry-run",
+            action = clap::ArgAction::Set,
+            default_value_t = true,
+            value_name = "BOOL"
+        )]
+        dry_run: bool,
+
+        /// Skip the local hash cache and rehash every file.
+        #[arg(long = "no-cache")]
+        no_cache: bool,
+
+        /// Number of files to hash in parallel (defaults to 1, HDD-friendly;
+        /// raise for SSD/NVMe sources).
+        #[arg(long = "parallel", short = 'p', value_name = "N", default_value_t = 1)]
+        parallel: usize,
+    },
 }

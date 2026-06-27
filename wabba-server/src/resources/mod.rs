@@ -167,6 +167,67 @@ fn check_hash<A: ArchiveType>(
     }
 }
 
+/// Resolution of a `--keep` hash for the `prune` CLI command. `mod_hashes`
+/// lists the xxhash64 of every mod required by a modlist; it is empty when the
+/// hash itself names a mod.
+#[derive(serde::Serialize)]
+struct KeepResolution {
+    kind: &'static str,
+    hash: String,
+    mod_hashes: Vec<String>,
+}
+
+/// Resolves a hash to a known mod or modlist. The `prune` command uses this to
+/// expand each `--keep` hash into the set of mod hashes that must be retained.
+/// The hash is passed via `If-None-Match` (consistent with `/check/*`) so the
+/// base64 hash never has to be URL-encoded into the path.
+#[get("/resolve")]
+pub async fn resolve_hash(
+    req: HttpRequest,
+    pool: web::Data<Pool<SqliteConnectionManager>>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let hash = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|x| x.to_str().ok());
+    let hash = match hash {
+        Some(h) => h.to_string(),
+        None => {
+            return Err(actix_web::error::ErrorBadRequest(
+                "If-None-Match header is required",
+            ));
+        }
+    };
+
+    let conn = pool
+        .get()
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    let db_err = |e: rusqlite::Error| {
+        actix_web::error::ErrorInternalServerError(format!("Database error: {}", e))
+    };
+
+    if let Some(modlist) = Modlist::get_by_hash(&hash, &conn).map_err(db_err)? {
+        let mods = Mod::get_by_modlist_id(modlist.id, &conn).map_err(db_err)?;
+        let mod_hashes = mods.into_iter().map(|m| m.xxhash64).collect();
+        return Ok(HttpResponse::Ok().json(KeepResolution {
+            kind: "modlist",
+            hash,
+            mod_hashes,
+        }));
+    }
+
+    if Mod::get_by_hash(&hash, &conn).map_err(db_err)?.is_some() {
+        return Ok(HttpResponse::Ok().json(KeepResolution {
+            kind: "mod",
+            hash,
+            mod_hashes: vec![],
+        }));
+    }
+
+    Ok(HttpResponse::NotFound().finish())
+}
+
 #[get("/check/modlist")]
 pub async fn check_modlist(
     req: HttpRequest,
