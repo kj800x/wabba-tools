@@ -147,6 +147,32 @@ impl Mod {
         Ok(mods)
     }
 
+    /// Returns every mod required by a modlist paired with the filename that
+    /// modlist expects it under (from `mod_association`). A single mod can be
+    /// shared across modlists under different names, so the per-modlist
+    /// association filename — not `disk_filename` — is the correct local
+    /// download name. Used by the `/modlist/mods` endpoint that drives the
+    /// `fetch-mods` CLI command.
+    pub fn get_with_filenames_by_modlist_id(
+        modlist_id: u64,
+        conn: &PooledConnection<SqliteConnectionManager>,
+    ) -> Result<Vec<(Self, String)>, rusqlite::Error> {
+        let mut stmt = conn.prepare(
+            "SELECT \"mod\".id, \"mod\".disk_filename, \"mod\".size, \"mod\".xxhash64, \"mod\".lost_forever, mod_association.filename
+             FROM \"mod\"
+             INNER JOIN mod_association ON \"mod\".id = mod_association.mod_id
+             WHERE mod_association.modlist_id = ?1
+             ORDER BY mod_association.filename",
+        )?;
+        let rows = stmt
+            .query_map(params![modlist_id], |row| {
+                Ok((Mod::from_row(row)?, row.get::<_, String>(5)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(rows)
+    }
+
     pub fn get_by_modlist_id(
         modlist_id: u64,
         conn: &PooledConnection<SqliteConnectionManager>,
