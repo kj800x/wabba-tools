@@ -96,15 +96,21 @@ pub fn modlist_identity_cell(href: &str, name: &str, filename: &str) -> Markup {
     identity_cell(href, name, secondary, None)
 }
 
-/// A hash cell rendering the full (short) hash on one line as a click-to-copy
-/// button — handy for pasting into CLI flags like `prune --keep <hash>`.
+/// A click-to-copy hash button (full hash, copies on click) — handy for
+/// pasting into CLI flags like `prune --keep <hash>`. Standalone so it can be
+/// used both in table cells and in the detail-page meta strips.
+pub fn hash_copy_button(hash: &str) -> Markup {
+    html! {
+        button.hash-copy type="button" data-hash=(hash) title="Click to copy full hash" {
+            code { (hash) }
+        }
+    }
+}
+
+/// A table cell wrapping [`hash_copy_button`].
 pub fn hash_cell(hash: &str) -> Markup {
     html! {
-        td.hash {
-            button.hash-copy type="button" data-hash=(hash) title="Click to copy full hash" {
-                code { (hash) }
-            }
-        }
+        td.hash { (hash_copy_button(hash)) }
     }
 }
 
@@ -121,7 +127,7 @@ document.addEventListener('click', function (e) {
   var text = btn.dataset.hash;
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text);
+      navigator.clipboard.writeText(text).catch(function () {});
     } else {
       var ta = document.createElement('textarea');
       ta.value = text;
