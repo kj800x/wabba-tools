@@ -1,17 +1,17 @@
 use crate::download_dir::DownloadDirectory;
-use crate::sync_cache::{CACHE_FILENAME, SyncCache, file_fingerprint};
+use crate::hashing::hash_files_with_cache;
+use crate::sync_cache::CACHE_FILENAME;
 use clap::Parser;
 mod cli;
 mod download_dir;
+mod hashing;
 mod sync_cache;
 use env_logger::Builder;
 use reqwest::Client;
 use reqwest::header::IF_NONE_MATCH;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use tokio::fs::File;
-use tokio::sync::Semaphore;
-use tokio::task::JoinSet;
 use tokio_util::codec::{BytesCodec, FramedRead};
 use wabba_protocol::{hash::Hash, wabbajack::WabbajackMetadata};
 
@@ -90,6 +90,42 @@ async fn server_has_hash(
     let url = format!("{}/check/{}", server, upload_type.as_str());
     let response = client.get(&url).header(IF_NONE_MATCH, hash).send().await?;
     Ok(response.status().as_u16() == 304)
+}
+
+/// Server's answer to `GET /resolve` for a single `--keep` hash. `mod_hashes`
+/// lists the xxhash64 of every mod required by a modlist; it is empty for a mod.
+#[derive(serde::Deserialize)]
+struct KeepResolution {
+    kind: String,
+    hash: String,
+    mod_hashes: Vec<String>,
+}
+
+/// Resolve a `--keep` hash to a mod or modlist on the server. Returns `None`
+/// when the server does not know the hash (404).
+async fn resolve_keep_hash(
+    client: &Client,
+    server: &str,
+    hash: &str,
+) -> Result<Option<KeepResolution>, reqwest::Error> {
+    let url = format!("{}/resolve", server);
+    let response = client.get(&url).header(IF_NONE_MATCH, hash).send().await?;
+    if response.status().as_u16() == 404 {
+        return Ok(None);
+    }
+    let resolution = response
+        .error_for_status()?
+        .json::<KeepResolution>()
+        .await?;
+    Ok(Some(resolution))
+}
+
+/// Append `.meta` to a path, yielding the sidecar metadata file Wabbajack
+/// stores next to each download (e.g. `foo.7z` -> `foo.7z.meta`).
+fn meta_path_for(path: &Path) -> PathBuf {
+    let mut os = path.to_path_buf().into_os_string();
+    os.push(".meta");
+    PathBuf::from(os)
 }
 
 /// Stream a single file up to the server. The caller is responsible for
@@ -266,138 +302,10 @@ async fn main() {
             let parallelism = (*parallel).max(1);
             let use_cache = !no_cache;
 
-            let old_cache = Arc::new(if use_cache {
-                SyncCache::load(directory)
-            } else {
-                SyncCache::default()
-            });
-            if use_cache {
-                log::info!(
-                    "Loaded {} cached hashes from {}",
-                    old_cache.len(),
-                    directory.display()
-                );
-            } else {
-                log::info!("Cache disabled (--no-cache); rehashing every file");
-            }
-            let new_cache = Arc::new(Mutex::new(SyncCache::default()));
-
-            log::info!(
-                "Hashing {} files with parallelism={}",
-                files.len(),
-                parallelism
-            );
-
-            let sem = Arc::new(Semaphore::new(parallelism));
-            let mut set: JoinSet<(PathBuf, Result<String, String>)> = JoinSet::new();
-            let total = files.len();
-
-            // Spawn every task up front so the `for` loop returns immediately
-            // and `join_next()` below can start draining (and logging) in
-            // parallel with hashing. Each task waits on the semaphore
-            // internally, so we only have `parallelism` hashers at a time.
-            for file in files.into_iter() {
-                let sem = Arc::clone(&sem);
-                let old_cache = Arc::clone(&old_cache);
-                let new_cache = Arc::clone(&new_cache);
-                set.spawn(async move {
-                    let permit = sem.acquire_owned().await.expect("semaphore not closed");
-                    tokio::task::spawn_blocking(move || {
-                        let _permit = permit;
-                        let filename = file
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or_default()
-                            .to_string();
-                        let result = (|| -> Result<String, String> {
-                            let metadata =
-                                std::fs::metadata(&file).map_err(|e| format!("stat: {}", e))?;
-                            let (size, mtime_nanos) = file_fingerprint(&metadata);
-
-                            if let Some(cached) = old_cache.lookup(&filename, size, mtime_nanos) {
-                                log::debug!("Cache hit for {}", filename);
-                                new_cache.lock().unwrap().insert(
-                                    filename.clone(),
-                                    size,
-                                    mtime_nanos,
-                                    cached.clone(),
-                                );
-                                return Ok(cached);
-                            }
-
-                            let hash =
-                                Hash::compute_file(&file).map_err(|e| format!("hash: {}", e))?;
-                            new_cache.lock().unwrap().insert(
-                                filename,
-                                size,
-                                mtime_nanos,
-                                hash.clone(),
-                            );
-                            Ok(hash)
-                        })();
-                        (file, result)
-                    })
-                    .await
-                    .expect("blocking hash task panicked")
-                });
-            }
-
-            // Flush the cache every N completed hashes so ctrl-c during the
-            // hash phase loses at most N-1 entries of work. The atomic
-            // save() keeps the on-disk file always consistent.
-            const CACHE_FLUSH_INTERVAL: usize = 50;
-
-            let mut hashed: Vec<(PathBuf, String)> = Vec::with_capacity(total);
-            let mut failed = 0usize;
-            let mut completed = 0usize;
-            while let Some(joined) = set.join_next().await {
-                let (file, result) = joined.expect("hash task panicked");
-                completed += 1;
-                let filename = file
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("<unknown>")
-                    .to_string();
-                match result {
-                    Ok(hash) => {
-                        log::info!("[{}/{}] Hashed {}", completed, total, filename);
-                        hashed.push((file, hash));
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "[{}/{}] Failed to hash {}: {}",
-                            completed,
-                            total,
-                            filename,
-                            e
-                        );
-                        failed += 1;
-                    }
-                }
-
-                if use_cache && completed.is_multiple_of(CACHE_FLUSH_INTERVAL) {
-                    let snapshot = new_cache.lock().unwrap().clone();
-                    if let Err(e) = snapshot.save(directory) {
-                        log::warn!("Cache flush failed at {} entries: {}", completed, e);
-                    } else {
-                        log::debug!("Flushed cache ({}/{} files hashed)", completed, total);
-                    }
-                }
-            }
-
-            // Final save before uploads — covers the last partial batch and
-            // any error paths that skipped the interval flush.
-            if use_cache {
-                let cache = Arc::try_unwrap(new_cache)
-                    .expect("cache Arc should be unique now")
-                    .into_inner()
-                    .expect("mutex not poisoned");
-                if let Err(e) = cache.save(directory) {
-                    log::warn!("Failed to save hash cache: {}", e);
-                } else {
-                    log::info!("Saved {} hashes to {}", cache.len(), directory.display());
-                }
-            }
+            let hashing::HashResults {
+                mut hashed,
+                mut failed,
+            } = hash_files_with_cache(directory, files, use_cache, parallelism).await;
 
             // Sort by filename for deterministic upload order + log output.
             hashed.sort_by(|a, b| a.0.file_name().cmp(&b.0.file_name()));
@@ -457,6 +365,182 @@ async fn main() {
                 skipped,
                 failed
             );
+        }
+
+        cli::Commands::Prune {
+            server,
+            directory,
+            keep,
+            dry_run,
+            no_cache,
+            parallel,
+        } => {
+            let client = Client::new();
+            let server = match resolve_base_url(&client, server).await {
+                Ok(s) => s,
+                Err(e) => {
+                    log::error!("Failed to reach server: {}", e);
+                    return;
+                }
+            };
+            let server = server.as_str();
+
+            // Resolve every --keep hash into the set of hashes we must retain:
+            // the named hash itself, plus (for a modlist) every mod it requires.
+            // Abort if any --keep hash is unknown to the server, so we never
+            // prune against an incomplete keep set.
+            let mut keep_set: HashSet<String> = HashSet::new();
+            let mut missing: Vec<String> = Vec::new();
+            for keep_hash in keep {
+                match resolve_keep_hash(&client, server, keep_hash).await {
+                    Ok(Some(resolution)) => {
+                        keep_set.insert(resolution.hash.clone());
+                        let mod_count = resolution.mod_hashes.len();
+                        keep_set.extend(resolution.mod_hashes);
+                        log::info!(
+                            "Resolved --keep {} as {} (keeping {} required mods)",
+                            keep_hash,
+                            resolution.kind,
+                            mod_count
+                        );
+                    }
+                    Ok(None) => missing.push(keep_hash.clone()),
+                    Err(e) => {
+                        log::error!("Failed to resolve --keep {}: {}", keep_hash, e);
+                        return;
+                    }
+                }
+            }
+            if !missing.is_empty() {
+                log::error!(
+                    "Aborting: these --keep hashes were not found on the server: {:?}",
+                    missing
+                );
+                return;
+            }
+            log::info!("Keep set contains {} hashes", keep_set.len());
+
+            let download_directory =
+                DownloadDirectory::new(directory).expect("Failed to open directory");
+
+            // `file_paths()` already drops `.meta` sidecars and subdirectories;
+            // also skip the sync cache file so we never consider it for pruning.
+            let files: Vec<PathBuf> = download_directory
+                .file_paths()
+                .into_iter()
+                .filter(|p| p.file_name().and_then(|n| n.to_str()) != Some(CACHE_FILENAME))
+                .collect();
+            log::info!(
+                "Found {} candidate files in {}",
+                files.len(),
+                directory.display()
+            );
+
+            let parallelism = (*parallel).max(1);
+            let use_cache = !no_cache;
+
+            let hashing::HashResults {
+                mut hashed,
+                mut failed,
+            } = hash_files_with_cache(directory, files, use_cache, parallelism).await;
+
+            // Deterministic order for stable log output.
+            hashed.sort_by(|a, b| a.0.file_name().cmp(&b.0.file_name()));
+
+            if *dry_run {
+                log::info!("DRY RUN — no files will be deleted (pass --dry-run false to delete)");
+            }
+
+            let mut deleted = 0usize;
+            let mut would_delete = 0usize;
+            let mut kept = 0usize;
+            let mut not_archived = 0usize;
+
+            for (file, hash) in &hashed {
+                let filename = file
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("<unknown>");
+
+                // Reachable from a --keep argument: always retained, and we can
+                // skip the server round-trip entirely.
+                if keep_set.contains(hash) {
+                    log::debug!("Keeping {} (reachable from --keep)", filename);
+                    kept += 1;
+                    continue;
+                }
+
+                // Not kept — only safe to delete if the server already has it
+                // archived. Otherwise leave it untouched.
+                let upload_type = upload_type_for(file);
+                match server_has_hash(&client, server, upload_type, hash).await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        log::info!("Keeping {} (not archived on server)", filename);
+                        not_archived += 1;
+                        continue;
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Archive check failed for {} — leaving in place: {}",
+                            filename,
+                            e
+                        );
+                        failed += 1;
+                        continue;
+                    }
+                }
+
+                // Server has it and it is not kept: prune the file and its
+                // `.meta` sidecar (if present).
+                let meta = meta_path_for(file);
+                let has_meta = meta.exists();
+                if *dry_run {
+                    if has_meta {
+                        log::info!("WOULD DELETE {} (and its .meta)", filename);
+                    } else {
+                        log::info!("WOULD DELETE {}", filename);
+                    }
+                    would_delete += 1;
+                    continue;
+                }
+
+                match std::fs::remove_file(file) {
+                    Ok(()) => {
+                        log::info!("DELETED {}", filename);
+                        deleted += 1;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to delete {}: {}", filename, e);
+                        failed += 1;
+                        continue;
+                    }
+                }
+                if has_meta {
+                    match std::fs::remove_file(&meta) {
+                        Ok(()) => log::info!("DELETED {}.meta", filename),
+                        Err(e) => log::warn!("Failed to delete meta for {}: {}", filename, e),
+                    }
+                }
+            }
+
+            if *dry_run {
+                log::info!(
+                    "Prune dry run complete: {} would delete, {} kept, {} not archived, {} errors",
+                    would_delete,
+                    kept,
+                    not_archived,
+                    failed
+                );
+            } else {
+                log::info!(
+                    "Prune complete: {} deleted, {} kept, {} not archived, {} errors",
+                    deleted,
+                    kept,
+                    not_archived,
+                    failed
+                );
+            }
         }
     }
 
@@ -521,6 +605,29 @@ async fn main() {
     // }
 
     // println!("{:#?}", result);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn meta_path_appends_meta_to_full_filename() {
+        // The sidecar keeps the archive's full name, including its extension:
+        // foo.7z -> foo.7z.meta (not foo.meta).
+        assert_eq!(
+            meta_path_for(Path::new("/downloads/foo.7z")),
+            PathBuf::from("/downloads/foo.7z.meta")
+        );
+        assert_eq!(
+            meta_path_for(Path::new("/downloads/no-ext")),
+            PathBuf::from("/downloads/no-ext.meta")
+        );
+        assert_eq!(
+            meta_path_for(Path::new("/downloads/a.tar.gz")),
+            PathBuf::from("/downloads/a.tar.gz.meta")
+        );
+    }
 }
 
 // trait FileExt {

@@ -33,7 +33,9 @@ use crate::data_dir::DataDir;
 use crate::db::migrations::migrate;
 use crate::prelude::*;
 use crate::resources::bootstrap::{bootstrap, bootstrap_modlists, bootstrap_mods};
-use crate::resources::{check_mod, check_modlist, hello_world, upload_mod, upload_modlist};
+use crate::resources::{
+    check_mod, check_modlist, hello_world, resolve_hash, upload_mod, upload_modlist,
+};
 use crate::web::details_page::{
     delete_mod, delete_modlist, details_page, download_mod, download_modlist, mod_details_page,
     mod_image, rename_modlist, toggle_lost_forever, toggle_muted,
@@ -63,6 +65,7 @@ async fn start_http(
             .service(upload_mod)
             .service(check_modlist)
             .service(check_mod)
+            .service(resolve_hash)
             .service(listing_page)
             .service(mods_listing_page)
             .service(muted_modlists_page)
