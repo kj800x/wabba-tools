@@ -333,14 +333,6 @@
     padding: 2rem;
   }
 
-  .header {
-    margin-bottom: 2rem;
-    background-color: white;
-    padding: 2rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
   .back-link {
     display: inline-block;
     margin-bottom: 1rem;
@@ -354,36 +346,11 @@
     }
   }
 
-  h1 {
-    margin: 0 0 1rem 0;
-    color: #2c3e50;
-    font-size: 2rem;
-    font-weight: 600;
-  }
-
   h2 {
     margin: 2rem 0 1rem 0;
     color: #2c3e50;
     font-size: 1.5rem;
     font-weight: 600;
-  }
-
-  .metadata {
-    margin-top: 1rem;
-
-    p {
-      margin: 0.5rem 0;
-      color: #666;
-    }
-
-    strong {
-      color: #333;
-      font-weight: 600;
-    }
-
-    form {
-      margin-left: 0;
-    }
   }
 
   .source-section {
@@ -752,4 +719,177 @@
 
 .hash-copy.copied code::after {
   content: " ✓";
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Cohesive button system + detail-page hero card.
+   Colour semantics: blue = primary action, neutral outline = secondary,
+   red outline = destructive. Green/amber/red solids are reserved for status
+   badges only, so colour never means two different things.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.btn-primary {
+  background-color: #2563eb;
+  color: #fff;
+}
+.btn-primary:hover {
+  background-color: #1d4ed8;
+}
+
+.btn-secondary {
+  background-color: #fff;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+.btn-secondary:hover {
+  background-color: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.btn-danger {
+  background-color: #fff;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+.btn-danger:hover {
+  background-color: #fef2f2;
+  border-color: #ef4444;
+}
+
+.status-badge.muted {
+  background-color: #e2e8f0;
+  color: #475569;
+}
+
+.text-input {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.875rem;
+  min-width: 16rem;
+}
+.text-input:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+/* Hero card at the top of detail pages. */
+.detail-hero {
+  margin-bottom: 2rem;
+  padding: 1.75rem;
+  background-color: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.hero-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.hero-titleblock {
+  min-width: 0;
+}
+
+.hero-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #1e293b;
+}
+
+.hero-title .source-chip {
+  font-size: 0.8rem;
+  margin-left: 0;
+}
+
+.hero-filename {
+  margin-top: 0.4rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: #64748b;
+  word-break: break-all;
+}
+
+.hero-status {
+  flex-shrink: 0;
+}
+
+.hero-status .status-badge {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.7rem;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+}
+
+.hero-rename {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+/* Key-facts row beneath the actions. */
+.meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.75rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #eef2f7;
+}
+
+.meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.meta-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.meta-value {
+  font-size: 0.95rem;
+  color: #1e293b;
+}
+
+.meta-value em {
+  color: #94a3b8;
+  font-style: italic;
 }

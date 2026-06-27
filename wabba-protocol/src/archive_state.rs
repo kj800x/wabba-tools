@@ -136,6 +136,30 @@ impl ArchiveState {
         }
     }
 
+    /// External URL where this archive can be found / downloaded from upstream,
+    /// if one applies. Used for the "Open Source" action on the mod details page.
+    pub fn source_url(&self) -> Option<String> {
+        match self {
+            ArchiveState::NexusDownloader {
+                game_name, mod_id, ..
+            } => Some(format!(
+                "https://www.nexusmods.com/{}/mods/{}",
+                game_name.to_lowercase().replace(' ', ""),
+                mod_id
+            )),
+            ArchiveState::HttpDownloader { url, .. } => Some(url.clone()),
+            ArchiveState::WabbajackCDNDownloader { url } => Some(url.clone()),
+            ArchiveState::ManualDownloader { url, .. } => Some(url.clone()),
+            ArchiveState::MegaDownloader { url } => Some(url.clone()),
+            ArchiveState::MediaFireDownloader { url } => Some(url.clone()),
+            ArchiveState::LoversLabOAuthDownloader { url, .. } => Some(url.clone()),
+            ArchiveState::GoogleDriveDownloader { id } => {
+                Some(format!("https://drive.google.com/file/d/{}/view", id))
+            }
+            ArchiveState::GameFileSourceDownloader { .. } | ArchiveState::UnknownDownloader => None,
+        }
+    }
+
     /// CSS class suffix used to colour the source chip (e.g. `nexus` -> `.source-chip.nexus`).
     pub fn source_chip_class(&self) -> &'static str {
         match self {

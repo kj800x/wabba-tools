@@ -10,7 +10,7 @@ use crate::db::mod_association::ModAssociation;
 use crate::db::mod_data::Mod;
 use crate::db::modlist::Modlist;
 use crate::web::components::{
-    clipboard_script, colgroup, hash_cell, mod_identity_cell, modlist_identity_cell,
+    clipboard_script, colgroup, hash_cell, hash_copy_button, mod_identity_cell, modlist_identity_cell,
 };
 use wabba_protocol::archive_state::ArchiveState;
 
@@ -30,14 +30,6 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-fn format_hash(hash: &str) -> String {
-    if hash.len() > 16 {
-        format!("{}...", &hash[..16])
-    } else {
-        hash.to_string()
-    }
-}
-
 fn nexus_game_url_slug(game_name: &str) -> String {
     game_name.to_lowercase().replace(" ", "")
 }
@@ -48,7 +40,6 @@ fn render_source(source: &ArchiveState, mod_id: u64) -> maud::Markup {
             ArchiveState::NexusDownloader {
                 name,
                 mod_id,
-                file_id,
                 game_name,
                 author,
                 description,
@@ -88,22 +79,6 @@ fn render_source(source: &ArchiveState, mod_id: u64) -> maud::Markup {
                         div.source-field {
                             strong { "Version: " }
                             (version)
-                        }
-                        div.source-field {
-                            strong { "Game: " }
-                            (game_name)
-                        }
-                        div.source-field {
-                            strong { "Mod ID: " }
-                            a href=(format!("https://www.nexusmods.com/{}/mods/{}", game_slug, mod_id)) target="_blank" {
-                                code { (mod_id) }
-                            }
-                        }
-                        div.source-field {
-                            strong { "File ID: " }
-                            a href=(format!("https://www.nexusmods.com/{}/mods/{}?tab=files&file_id={}", game_slug, mod_id, file_id)) target="_blank" {
-                                code { (file_id) }
-                            }
                         }
                         @if !description.is_empty() {
                             div.source-field {
@@ -206,7 +181,6 @@ fn render_source(source: &ArchiveState, mod_id: u64) -> maud::Markup {
             }
             ArchiveState::LoversLabOAuthDownloader {
                 name,
-                ips4_mod,
                 url,
                 author,
                 description,
@@ -247,10 +221,6 @@ fn render_source(source: &ArchiveState, mod_id: u64) -> maud::Markup {
                                 strong { "Version: " }
                                 (mod_version)
                             }
-                        }
-                        div.source-field {
-                            strong { "Mod ID: " }
-                            code { (ips4_mod) }
                         }
                         div.source-field {
                             strong { "URL: " }
@@ -410,6 +380,22 @@ pub async fn mod_details_page(
         Vec::new()
     };
 
+    // Hero card display values: lead with the upstream mod name, fall back to
+    // the filename (which becomes the title when there is no name).
+    let hero_name = primary_assoc
+        .and_then(|a| a.name.as_deref())
+        .filter(|s| !s.is_empty());
+    let hero_filename = mod_item
+        .disk_filename
+        .as_deref()
+        .or_else(|| primary_assoc.map(|a| a.filename.as_str()))
+        .filter(|s| !s.is_empty());
+    let hero_title = hero_name.or(hero_filename).unwrap_or("Unknown Mod");
+    let hero_subline = if hero_name.is_some() { hero_filename } else { None };
+    let source_url = primary_assoc.and_then(|a| a.source.source_url());
+    let source_chip =
+        primary_assoc.map(|a| (a.source.source_chip_label(), a.source.source_chip_class()));
+
     let page = html! {
         (maud::DOCTYPE)
         html {
@@ -453,65 +439,21 @@ pub async fn mod_details_page(
             }
             body.page-details {
                 div.container {
-                    div.header {
-                        a.back-link href="/" { "← Back to Modlists" }
-                        h1 {
-                            @match primary_assoc {
-                                Some(assoc) => {
-                                    @match &assoc.name {
-                                        Some(name) => {
-                                            (name.clone())
-                                        }
-                                        None => {
-                                            @match &mod_item.disk_filename {
-                                                Some(disk_filename) => {
-                                                    (disk_filename.clone())
-                                                }
-                                                None => {
-                                                    (assoc.filename.clone())
-                                                }
-                                            }
-                                        }
+                    div.detail-hero {
+                        a.back-link href="/mods" { "← All Mods" }
+                        div.hero-head {
+                            div.hero-titleblock {
+                                h1.hero-title {
+                                    (hero_title)
+                                    @if let Some((label, class)) = source_chip {
+                                        span class=(format!("source-chip {class}")) { (label) }
                                     }
                                 }
-                                None => {
-                                    @match &mod_item.disk_filename {
-                                        Some(disk_filename) => {
-                                            (disk_filename.clone())
-                                        }
-                                        None => {
-                                            "Unknown Mod"
-                                        }
-                                    }
+                                @if let Some(sub) = hero_subline {
+                                    div.hero-filename { (sub) }
                                 }
                             }
-                        }
-                        div.metadata {
-                            p { strong { "ID: " } (mod_item.id) }
-                            p {
-                                strong { "Disk Filename: " }
-                                @match &mod_item.disk_filename {
-                                    Some(disk_filename) => {
-                                        (disk_filename.clone())
-                                    }
-                                    None => {
-                                        em { "Not available on disk" }
-                                    }
-                                }
-                            }
-                            @if let Some(assoc) = primary_assoc {
-                                p { strong { "Modlist Filename: " } (assoc.filename.clone()) }
-                        @if let Some(name) = &assoc.name {
-                            p { strong { "Name: " } (name.clone()) }
-                        }
-                        @if let Some(version) = &assoc.version {
-                            p { strong { "Version: " } (version.clone()) }
-                        }
-                            }
-                            p { strong { "Size: " } (format_size(mod_item.size)) }
-                            p { strong { "Hash: " } span.hash { code { (format_hash(&mod_item.xxhash64)) } } }
-                            p {
-                                strong { "Status: " }
+                            div.hero-status {
                                 @if mod_item.is_available() {
                                     span.status-badge.available { "Available" }
                                 } @else if mod_item.lost_forever {
@@ -519,43 +461,49 @@ pub async fn mod_details_page(
                                 } @else {
                                     span.status-badge.unavailable { "Unavailable" }
                                 }
-                                @if mod_item.is_available() {
-                                    a.download-button href=(format!("/mod/{}/download", mod_item.id)) style="display: inline-block; margin-left: 1rem; padding: 0.4rem 0.8rem; border-radius: 4px; background-color: #27ae60; color: white; font-weight: 500; text-decoration: none;" {
-                                        "Download"
-                                    }
-                                }
                             }
-                            @if !mod_item.is_available() {
-                                p {
-                                    strong { "Lost Forever: " }
-                                    @if mod_item.lost_forever {
-                                        span.status-badge.missing { "Yes" }
-                                    } @else {
-                                        span { "No" }
-                                    }
-                                    form method="post" action=(format!("/mod/{}/toggle-lost-forever", mod_item.id)) style="display: inline-block;" {
-                                        button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #3498db; color: white; font-weight: 500;" {
-                                            @if mod_item.lost_forever {
-                                                "Mark as Recoverable"
-                                            } @else {
-                                                "Mark as Lost Forever"
-                                            }
-                                        }
+                        }
+                        div.hero-actions {
+                            @if mod_item.is_available() {
+                                a.btn.btn-primary href=(format!("/mod/{}/download", mod_item.id)) { "↓ Download" }
+                                @if let Some(url) = &source_url {
+                                    a.btn.btn-secondary href=(url) target="_blank" rel="noopener" { "Open Source ↗" }
+                                }
+                            } @else {
+                                @if let Some(url) = &source_url {
+                                    a.btn.btn-primary href=(url) target="_blank" rel="noopener" { "Open Source ↗" }
+                                }
+                                form method="post" action=(format!("/mod/{}/toggle-lost-forever", mod_item.id)) {
+                                    button.btn.btn-secondary type="submit" {
+                                        @if mod_item.lost_forever { "Mark as Recoverable" } @else { "Mark as Lost Forever" }
                                     }
                                 }
                             }
                             @if show_debug {
-                                p.debug-actions style="margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed #e74c3c;" {
-                                    strong { "Debug: " }
-                                    form method="post"
-                                         action=(format!("/mod/{}/delete", mod_item.id))
-                                         onsubmit="return confirm('Delete this mod permanently?\\n\\nThis removes the DB row, all mod associations, and the file on disk. Cannot be undone.');"
-                                         style="display: inline-block;" {
-                                        button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #e74c3c; color: white; font-weight: 500;" {
-                                            "Delete Mod"
-                                        }
+                                form method="post"
+                                     action=(format!("/mod/{}/delete", mod_item.id))
+                                     onsubmit="return confirm('Delete this mod permanently?\\n\\nThis removes the DB row, all mod associations, and the file on disk. Cannot be undone.');" {
+                                    button.btn.btn-danger type="submit" { "Delete Mod" }
+                                }
+                            }
+                        }
+                        div.meta-strip {
+                            div.meta-item {
+                                span.meta-label { "Version" }
+                                span.meta-value {
+                                    @match primary_assoc.and_then(|a| a.version.as_deref()) {
+                                        Some(v) if !v.is_empty() => { (v) }
+                                        _ => { em { "—" } }
                                     }
                                 }
+                            }
+                            div.meta-item {
+                                span.meta-label { "Size" }
+                                span.meta-value { (format_size(mod_item.size)) }
+                            }
+                            div.meta-item {
+                                span.meta-label { "Hash" }
+                                span.meta-value { (hash_copy_button(&mod_item.xxhash64)) }
                             }
                         }
                     }
@@ -1163,6 +1111,11 @@ pub async fn details_page(
         })
         .collect();
 
+    // Modlist install-readiness summary for the hero status badge.
+    let mods_total = mods.len();
+    let mods_available = mods_total - unavailable_mods.len();
+    let has_lost_forever = unavailable_mods.iter().any(|m| m.lost_forever);
+
     let page = html! {
         (maud::DOCTYPE)
         html {
@@ -1175,63 +1128,69 @@ pub async fn details_page(
             }
             body.page-details {
                 div.container {
-                    div.header {
+                    div.detail-hero {
                         a.back-link href=(if modlist.muted { "/modlists/muted" } else { "/" }) {
                             @if modlist.muted {
-                                "← Back to Muted Modlists"
+                                "← Muted Modlists"
                             } @else {
-                                "← Back to Modlists"
+                                "← All Modlists"
                             }
                         }
-                        h1 { (modlist.name.clone()) }
-                        div.metadata {
-                            p { strong { "Version: " } (modlist.version.clone()) }
-                            p {
-                                strong { "Filename: " }
-                                (modlist.filename.clone())
-                                form method="post" action=(format!("/modlists/{}/rename", modlist.id)) style="display: inline-block; margin-left: 1rem;" {
-                                    input type="text" name="new_filename" value=(modlist.filename.clone()) style="padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; margin-right: 0.5rem;" required;
-                                    button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #27ae60; color: white; font-weight: 500;" {
-                                        "Rename"
-                                    }
+                        div.hero-head {
+                            div.hero-titleblock {
+                                h1.hero-title { (modlist.name.clone()) }
+                                div.hero-filename { (modlist.filename.clone()) }
+                            }
+                            div.hero-status {
+                                @if has_lost_forever {
+                                    span.status-badge.missing { "Uninstallable" }
+                                } @else if mods_available < mods_total {
+                                    span.status-badge.unavailable { "Missing files" }
+                                } @else {
+                                    span.status-badge.available { "Ready" }
                                 }
-                                @if modlist.available {
-                                    a.download-button href=(format!("/modlists/{}/download", modlist.id)) style="display: inline-block; margin-left: 0.5rem; padding: 0.4rem 0.8rem; border-radius: 4px; background-color: #27ae60; color: white; font-weight: 500; text-decoration: none;" {
-                                        "Download"
-                                    }
+                                @if modlist.muted {
+                                    span.status-badge.muted { "Muted" }
                                 }
                             }
-                            p { strong { "Size: " } (format_size(modlist.size)) }
-                            p { strong { "Hash: " } span.hash { code { (format_hash(&modlist.xxhash64)) } } }
-                            p {
-                                strong { "Muted: " }
-                                @if modlist.muted {
-                                    span.status-badge.missing { "Yes" }
-                                } @else {
-                                    span { "No" }
+                        }
+                        div.hero-actions {
+                            @if modlist.available {
+                                a.btn.btn-primary href=(format!("/modlists/{}/download", modlist.id)) { "↓ Download" }
+                            }
+                            form method="post" action=(format!("/modlists/{}/toggle-muted", modlist.id)) {
+                                button.btn.btn-secondary type="submit" {
+                                    @if modlist.muted { "Unmute" } @else { "Mute" }
                                 }
-                                form method="post" action=(format!("/modlists/{}/toggle-muted", modlist.id)) style="display: inline-block;" {
-                                    button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #3498db; color: white; font-weight: 500;" {
-                                        @if modlist.muted {
-                                            "Unmute Modlist"
-                                        } @else {
-                                            "Mute Modlist"
-                                        }
-                                    }
-                                }
+                            }
+                            form.hero-rename method="post" action=(format!("/modlists/{}/rename", modlist.id)) {
+                                input.text-input type="text" name="new_filename" value=(modlist.filename.clone()) required;
+                                button.btn.btn-secondary type="submit" { "Rename" }
                             }
                             @if show_debug {
-                                p.debug-actions style="margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed #e74c3c;" {
-                                    strong { "Debug: " }
-                                    form method="post"
-                                         action=(format!("/modlists/{}/delete", modlist.id))
-                                         onsubmit="return confirm('Delete this modlist permanently?\\n\\nThis removes the DB row, all mod associations, and the .wabbajack file on disk. Mods referenced only by this modlist remain. Cannot be undone.');"
-                                         style="display: inline-block;" {
-                                        button type="submit" style="padding: 0.4rem 0.8rem; border-radius: 4px; border: none; cursor: pointer; background-color: #e74c3c; color: white; font-weight: 500;" {
-                                            "Delete Modlist"
-                                        }
-                                    }
+                                form method="post"
+                                     action=(format!("/modlists/{}/delete", modlist.id))
+                                     onsubmit="return confirm('Delete this modlist permanently?\\n\\nThis removes the DB row, all mod associations, and the .wabbajack file on disk. Mods referenced only by this modlist remain. Cannot be undone.');" {
+                                    button.btn.btn-danger type="submit" { "Delete Modlist" }
                                 }
+                            }
+                        }
+                        div.meta-strip {
+                            div.meta-item {
+                                span.meta-label { "Version" }
+                                span.meta-value { (modlist.version.clone()) }
+                            }
+                            div.meta-item {
+                                span.meta-label { "Size" }
+                                span.meta-value { (format_size(modlist.size)) }
+                            }
+                            div.meta-item {
+                                span.meta-label { "Mods" }
+                                span.meta-value { (mods_available) " / " (mods_total) }
+                            }
+                            div.meta-item {
+                                span.meta-label { "Hash" }
+                                span.meta-value { (hash_copy_button(&modlist.xxhash64)) }
                             }
                         }
                     }
