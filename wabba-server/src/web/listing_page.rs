@@ -5,6 +5,9 @@ use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::db::mod_data::Mod;
 use crate::db::modlist::Modlist;
+use crate::web::components::{
+    clipboard_script, colgroup, hash_cell, mod_identity_cell, modlist_identity_cell,
+};
 
 fn format_size(bytes: u64) -> String {
     const KB: u64 = 1024;
@@ -19,14 +22,6 @@ fn format_size(bytes: u64) -> String {
         format!("{:.2} KB", bytes as f64 / KB as f64)
     } else {
         format!("{} B", bytes)
-    }
-}
-
-fn format_hash(hash: &str) -> String {
-    if hash.len() > 16 {
-        format!("{}...", &hash[..16])
-    } else {
-        hash.to_string()
     }
 }
 
@@ -62,6 +57,7 @@ pub async fn listing_page(
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { "Modlists" }
                 link rel="stylesheet" href="/res/styles.css";
+                (clipboard_script())
             }
             body.page-listing {
                 div.container {
@@ -77,15 +73,14 @@ pub async fn listing_page(
                         p.empty-state { "No modlists found." }
                     } @else {
                         table.modlist-table {
+                            (colgroup(&["col-mod", "col-version", "col-size", "col-hash", "col-count", "col-status"]))
                             thead {
                                 tr {
-                                    th { "Name" }
+                                    th { "Modlist" }
                                     th { "Version" }
-                                    th { "Filename" }
                                     th { "Size" }
                                     th { "Hash" }
-                                    th { "Mods total" }
-                                    th { "Mods available" }
+                                    th { "Mods" }
                                     th { "Status" }
                                 }
                             }
@@ -100,19 +95,17 @@ pub async fn listing_page(
                                             ""
                                         }
                                     ) {
-                                        td.name {
-                                            a href={"/modlists/" (modlist.id)} {
-                                                (modlist.name)
-                                            }
-                                        }
+                                        (modlist_identity_cell(
+                                            &format!("/modlists/{}", modlist.id),
+                                            &modlist.name,
+                                            &modlist.filename,
+                                        ))
                                         td.version { (modlist.version) }
-                                        td.filename { (modlist.filename) }
                                         td.size { (format_size(modlist.size)) }
-                                        td.hash {
-                                            code { (format_hash(&modlist.xxhash64)) }
+                                        (hash_cell(&modlist.xxhash64))
+                                        td.count {
+                                            (mods_available) " / " (mods_total)
                                         }
-                                        td { (mods_total) }
-                                        td { (mods_available) }
                                         td.status {
                                             @if *has_lost_forever {
                                                 span.status-badge.missing { "Uninstallable" }
@@ -186,6 +179,7 @@ pub async fn muted_modlists_page(
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { "Muted Modlists" }
                 link rel="stylesheet" href="/res/styles.css";
+                (clipboard_script())
             }
             body.page-listing {
                 div.container {
@@ -200,15 +194,14 @@ pub async fn muted_modlists_page(
                         p.empty-state { "No muted modlists found." }
                     } @else {
                         table.modlist-table {
+                            (colgroup(&["col-mod", "col-version", "col-size", "col-hash", "col-count", "col-status"]))
                             thead {
                                 tr {
-                                    th { "Name" }
+                                    th { "Modlist" }
                                     th { "Version" }
-                                    th { "Filename" }
                                     th { "Size" }
                                     th { "Hash" }
-                                    th { "Mods total" }
-                                    th { "Mods available" }
+                                    th { "Mods" }
                                     th { "Status" }
                                 }
                             }
@@ -223,19 +216,17 @@ pub async fn muted_modlists_page(
                                             "muted-row"
                                         }
                                     ) {
-                                        td.name {
-                                            a href={"/modlists/" (modlist.id)} {
-                                                (modlist.name)
-                                            }
-                                        }
+                                        (modlist_identity_cell(
+                                            &format!("/modlists/{}", modlist.id),
+                                            &modlist.name,
+                                            &modlist.filename,
+                                        ))
                                         td.version { (modlist.version) }
-                                        td.filename { (modlist.filename) }
                                         td.size { (format_size(modlist.size)) }
-                                        td.hash {
-                                            code { (format_hash(&modlist.xxhash64)) }
+                                        (hash_cell(&modlist.xxhash64))
+                                        td.count {
+                                            (mods_available) " / " (mods_total)
                                         }
-                                        td { (mods_total) }
-                                        td { (mods_available) }
                                         td.status {
                                             @if *has_lost_forever {
                                                 span.status-badge.missing { "Uninstallable" }
@@ -291,6 +282,7 @@ pub async fn mods_listing_page(
                     }
                 }
                 link rel="stylesheet" href="/res/styles.css";
+                (clipboard_script())
             }
             body.page-listing {
                 div.container {
@@ -322,10 +314,10 @@ pub async fn mods_listing_page(
                         }
                     } @else {
                         table.modlist-table.mods-table {
+                            (colgroup(&["col-mod", "col-version", "col-size", "col-hash", "col-count", "col-status"]))
                             thead {
                                 tr {
-                                    th { "Filename" }
-                                    th { "Name" }
+                                    th { "Mod" }
                                     th { "Version" }
                                     th { "Size" }
                                     th { "Hash" }
@@ -336,44 +328,11 @@ pub async fn mods_listing_page(
                             tbody {
                                 @for (mod_item, modlists_count, first_assoc) in &mods_with_metadata {
                                     tr {
-                                        td.filename {
-                                            a href=(format!("/mod/{}", mod_item.id)) {
-                                                @match &mod_item.disk_filename {
-                                                    Some(disk_filename) => {
-                                                        (disk_filename)
-                                                    }
-                                                    None => {
-                                                        @match first_assoc {
-                                                            Some(assoc) => {
-                                                                (assoc.filename.clone())
-                                                            }
-                                                            None => {
-                                                                em { "Unknown" }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        td.name {
-                                            a href=(format!("/mod/{}", mod_item.id)) {
-                                                @match first_assoc {
-                                                    Some(assoc) => {
-                                                        @match &assoc.name {
-                                                            Some(name) => {
-                                                                (name.clone())
-                                                            }
-                                                            None => {
-                                                                em { "Unknown" }
-                                                            }
-                                                        }
-                                                    }
-                                                    None => {
-                                                        em { "Unknown" }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        (mod_identity_cell(
+                                            &format!("/mod/{}", mod_item.id),
+                                            mod_item.disk_filename.as_deref(),
+                                            first_assoc.as_ref(),
+                                        ))
                                         td.version {
                                             @match first_assoc {
                                                 Some(assoc) => {
@@ -392,9 +351,7 @@ pub async fn mods_listing_page(
                                             }
                                         }
                                         td.size { (format_size(mod_item.size)) }
-                                        td.hash {
-                                            code { (format_hash(&mod_item.xxhash64)) }
-                                        }
+                                        (hash_cell(&mod_item.xxhash64))
                                         td { (modlists_count) }
                                         td.status {
                                             @if mod_item.is_available() {

@@ -9,6 +9,9 @@ use crate::data_dir::DataDir;
 use crate::db::mod_association::ModAssociation;
 use crate::db::mod_data::Mod;
 use crate::db::modlist::Modlist;
+use crate::web::components::{
+    clipboard_script, colgroup, hash_cell, mod_identity_cell, modlist_identity_cell,
+};
 use wabba_protocol::archive_state::ArchiveState;
 
 fn format_size(bytes: u64) -> String {
@@ -446,6 +449,7 @@ pub async fn mod_details_page(
                     " - Mod Details"
                 }
                 link rel="stylesheet" href="/res/styles.css";
+                (clipboard_script())
             }
             body.page-details {
                 div.container {
@@ -568,11 +572,11 @@ pub async fn mod_details_page(
                         p.empty-state { "No conflicts found." }
                     } @else {
                         table.mod-table.mod-table-with-id {
+                            (colgroup(&["col-id", "col-mod", "col-version", "col-size", "col-hash", "col-status"]))
                             thead {
                                 tr {
                                     th { "ID" }
-                                    th { "Filename" }
-                                    th { "Name" }
+                                    th { "Mod" }
                                     th { "Version" }
                                     th { "Size" }
                                     th { "Hash" }
@@ -583,44 +587,11 @@ pub async fn mod_details_page(
                                 @for (related_mod, related_first_assoc) in &mods_same_filename_with_assocs {
                                     tr class=(if related_mod.is_available() { "" } else { "unavailable-row" }) {
                                         td.id { (related_mod.id) }
-                                        td.filename {
-                                            a href=(format!("/mod/{}", related_mod.id)) {
-                                                @match &related_mod.disk_filename {
-                                                    Some(disk_filename) => {
-                                                        (disk_filename.clone())
-                                                    }
-                                                    None => {
-                                                        @match related_first_assoc {
-                                                            Some(assoc) => {
-                                                                (assoc.filename.clone())
-                                                            }
-                                                            None => {
-                                                                em { "Unknown" }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        td.name {
-                                            a href=(format!("/mod/{}", related_mod.id)) {
-                                                @match related_first_assoc {
-                                                    Some(assoc) => {
-                                                        @match &assoc.name {
-                                                            Some(name) => {
-                                                                (name.clone())
-                                                            }
-                                                            None => {
-                                                                em { "Unknown" }
-                                                            }
-                                                        }
-                                                    }
-                                                    None => {
-                                                        em { "Unknown" }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        (mod_identity_cell(
+                                            &format!("/mod/{}", related_mod.id),
+                                            related_mod.disk_filename.as_deref(),
+                                            related_first_assoc.as_ref(),
+                                        ))
                                         td.version {
                                             @match related_first_assoc {
                                                 Some(assoc) => {
@@ -641,9 +612,7 @@ pub async fn mod_details_page(
                                         td.size {
                                             (format_size(related_mod.size))
                                         }
-                                        td.hash {
-                                            code { (format_hash(&related_mod.xxhash64)) }
-                                        }
+                                        (hash_cell(&related_mod.xxhash64))
                                         td.status {
                                             @if related_mod.is_available() {
                                                 span.status-badge.available { "Available" }
@@ -664,48 +633,27 @@ pub async fn mod_details_page(
                         p.empty-state { "This mod is not associated with any modlists." }
                     } @else {
                         table.mod-table {
+                            (colgroup(&["col-mod", "col-version", "col-size", "col-hash", "col-status"]))
                             thead {
                                 tr {
-                                    th { "Name" }
+                                    th { "Modlist" }
                                     th { "Version" }
-                                    th { "Filename" }
                                     th { "Size" }
                                     th { "Hash" }
                                     th { "Status" }
                                 }
                             }
                             tbody {
-                                @for (modlist, assoc, has_lost_forever) in &modlists_with_assocs {
+                                @for (modlist, _assoc, has_lost_forever) in &modlists_with_assocs {
                                     tr {
-                                        td.name {
-                                            a href=(format!("/modlists/{}", modlist.id)) {
-                                                (modlist.name.clone())
-                                            }
-                                        }
+                                        (modlist_identity_cell(
+                                            &format!("/modlists/{}", modlist.id),
+                                            &modlist.name,
+                                            &modlist.filename,
+                                        ))
                                         td.version { (modlist.version.clone()) }
-                                        td.filename {
-                                            @match assoc {
-                                                Some(assoc) => {
-                                                    (assoc.filename.clone())
-                                                }
-                                                None => {
-                                                    @match &mod_item.disk_filename {
-                                                        Some(disk_filename) => {
-                                                            (disk_filename.clone())
-                                                        }
-                                                        None => {
-                                                            em { "Unknown" }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        td.size { (format_size(mod_item.size)) }
-                                        td.hash {
-                                            span.hash {
-                                                code { (format_hash(&mod_item.xxhash64)) }
-                                            }
-                                        }
+                                        td.size { (format_size(modlist.size)) }
+                                        (hash_cell(&modlist.xxhash64))
                                         td.status {
                                             @if *has_lost_forever {
                                                 span.status-badge.missing { "Uninstallable" }
@@ -727,11 +675,11 @@ pub async fn mod_details_page(
                             p.empty-state { "No other versions found." }
                         } @else {
                             table.mod-table.mod-table-with-id {
+                                (colgroup(&["col-id", "col-mod", "col-version", "col-size", "col-hash", "col-status"]))
                                 thead {
                                     tr {
                                         th { "ID" }
-                                        th { "Filename" }
-                                        th { "Name" }
+                                        th { "Mod" }
                                         th { "Version" }
                                         th { "Size" }
                                         th { "Hash" }
@@ -742,44 +690,11 @@ pub async fn mod_details_page(
                                 @for (related_mod, related_first_assoc) in &mods_same_name {
                                         tr class=(if related_mod.is_available() { "" } else { "unavailable-row" }) {
                                             td.id { (related_mod.id) }
-                                            td.filename {
-                                                a href=(format!("/mod/{}", related_mod.id)) {
-                                                    @match &related_mod.disk_filename {
-                                                        Some(disk_filename) => {
-                                                            (disk_filename.clone())
-                                                        }
-                                                        None => {
-                                                            @match related_first_assoc {
-                                                                Some(assoc) => {
-                                                                    (assoc.filename.clone())
-                                                                }
-                                                                None => {
-                                                                    em { "Unknown" }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            td.name {
-                                                a href=(format!("/mod/{}", related_mod.id)) {
-                                                    @match related_first_assoc {
-                                                        Some(assoc) => {
-                                                            @match &assoc.name {
-                                                                Some(name) => {
-                                                                    (name.clone())
-                                                                }
-                                                                None => {
-                                                                    em { "Unknown" }
-                                                                }
-                                                            }
-                                                        }
-                                                        None => {
-                                                            em { "Unknown" }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                            (mod_identity_cell(
+                                                &format!("/mod/{}", related_mod.id),
+                                                related_mod.disk_filename.as_deref(),
+                                                related_first_assoc.as_ref(),
+                                            ))
                                             td.version {
                                                 @match related_first_assoc {
                                                     Some(assoc) => {
@@ -800,9 +715,7 @@ pub async fn mod_details_page(
                                             td.size {
                                                 (format_size(related_mod.size))
                                             }
-                                            td.hash {
-                                                code { (format_hash(&related_mod.xxhash64)) }
-                                            }
+                                            (hash_cell(&related_mod.xxhash64))
                                             td.status {
                                                 @if related_mod.is_available() {
                                                     span.status-badge.available { "Available" }
@@ -1258,6 +1171,7 @@ pub async fn details_page(
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (modlist.name.clone()) " - Modlist Details" }
                 link rel="stylesheet" href="/res/styles.css";
+                (clipboard_script())
             }
             body.page-details {
                 div.container {
@@ -1325,10 +1239,10 @@ pub async fn details_page(
                     @if show_missing_table {
                         h2 { "Missing Mods" }
                         table.mod-table {
+                            (colgroup(&["col-mod", "col-version", "col-size", "col-hash", "col-status"]))
                             thead {
                                 tr {
-                                    th { "Filename" }
-                                    th { "Name" }
+                                    th { "Mod" }
                                     th { "Version" }
                                     th { "Size" }
                                     th { "Hash" }
@@ -1338,44 +1252,11 @@ pub async fn details_page(
                             tbody {
                                 @for (mod_item, assoc) in &unavailable_mods_with_assocs {
                                     tr {
-                                        td.filename {
-                                            a href=(format!("/mod/{}", mod_item.id)) {
-                                                @match assoc {
-                                                    Some(assoc) => {
-                                                        (assoc.filename.clone())
-                                                    }
-                                                    None => {
-                                                        @match &mod_item.disk_filename {
-                                                            Some(disk_filename) => {
-                                                                (disk_filename.clone())
-                                                            }
-                                                            None => {
-                                                                em { "Unknown" }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        td.name {
-                                            a href=(format!("/mod/{}", mod_item.id)) {
-                                                @match assoc {
-                                                    Some(assoc) => {
-                                                        @match &assoc.name {
-                                                            Some(name) => {
-                                                                (name.clone())
-                                                            }
-                                                            None => {
-                                                                em { "Unknown" }
-                                                            }
-                                                        }
-                                                    }
-                                                    None => {
-                                                        em { "Unknown" }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        (mod_identity_cell(
+                                            &format!("/mod/{}", mod_item.id),
+                                            mod_item.disk_filename.as_deref(),
+                                            *assoc,
+                                        ))
                                         td.version {
                                             @match assoc {
                                                 Some(assoc) => {
@@ -1396,9 +1277,7 @@ pub async fn details_page(
                                         td.size {
                                             (format_size(mod_item.size))
                                         }
-                                        td.hash {
-                                            code { (format_hash(&mod_item.xxhash64)) }
-                                        }
+                                        (hash_cell(&mod_item.xxhash64))
                                         td.status {
                                             @if mod_item.lost_forever {
                                                 span.status-badge.missing { "Lost Forever" }
@@ -1417,10 +1296,10 @@ pub async fn details_page(
                         p.empty-state { "No mods found." }
                     } @else {
                         table.mod-table {
+                            (colgroup(&["col-mod", "col-version", "col-size", "col-hash", "col-status"]))
                             thead {
                                 tr {
-                                    th { "Filename" }
-                                    th { "Name" }
+                                    th { "Mod" }
                                     th { "Version" }
                                     th { "Size" }
                                     th { "Hash" }
@@ -1430,44 +1309,11 @@ pub async fn details_page(
                             tbody {
                                 @for (mod_item, assoc) in &mods_with_assocs {
                                     tr {
-                                        td.filename {
-                                            a href=(format!("/mod/{}", mod_item.id)) {
-                                                @match assoc {
-                                                    Some(assoc) => {
-                                                        (assoc.filename.clone())
-                                                    }
-                                                    None => {
-                                                        @match &mod_item.disk_filename {
-                                                            Some(disk_filename) => {
-                                                                (disk_filename.clone())
-                                                            }
-                                                            None => {
-                                                                em { "Unknown" }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        td.name {
-                                            a href=(format!("/mod/{}", mod_item.id)) {
-                                                @match assoc {
-                                                    Some(assoc) => {
-                                                        @match &assoc.name {
-                                                            Some(name) => {
-                                                                (name.clone())
-                                                            }
-                                                            None => {
-                                                                em { "Unknown" }
-                                                            }
-                                                        }
-                                                    }
-                                                    None => {
-                                                        em { "Unknown" }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        (mod_identity_cell(
+                                            &format!("/mod/{}", mod_item.id),
+                                            mod_item.disk_filename.as_deref(),
+                                            *assoc,
+                                        ))
                                         td.version {
                                             @match assoc {
                                                 Some(assoc) => {
@@ -1488,9 +1334,7 @@ pub async fn details_page(
                                         td.size {
                                             (format_size(mod_item.size))
                                         }
-                                        td.hash {
-                                            code { (format_hash(&mod_item.xxhash64)) }
-                                        }
+                                        (hash_cell(&mod_item.xxhash64))
                                         td.status {
                                             @if mod_item.is_available() {
                                                 span.status-badge.available { "Available" }

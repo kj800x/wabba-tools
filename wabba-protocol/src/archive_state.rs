@@ -102,6 +102,56 @@ impl ArchiveState {
         }
     }
 
+    /// Short human-readable label for the download source type. Matches the
+    /// labels rendered on the mod details page.
+    pub fn source_label(&self) -> &'static str {
+        match self {
+            ArchiveState::NexusDownloader { .. } => "Nexus Mods",
+            ArchiveState::HttpDownloader { .. } => "HTTP Download",
+            ArchiveState::WabbajackCDNDownloader { .. } => "Wabbajack CDN",
+            ArchiveState::ManualDownloader { .. } => "Manual Download",
+            ArchiveState::MegaDownloader { .. } => "MEGA",
+            ArchiveState::GoogleDriveDownloader { .. } => "Google Drive",
+            ArchiveState::MediaFireDownloader { .. } => "MediaFire",
+            ArchiveState::LoversLabOAuthDownloader { .. } => "LoversLab",
+            ArchiveState::GameFileSourceDownloader { .. } => "Game File",
+            ArchiveState::UnknownDownloader => "Unknown Source",
+        }
+    }
+
+    /// Terse label for the source chip shown in dense list/table views.
+    /// Keep these short; the full [`Self::source_label`] is used on detail pages.
+    pub fn source_chip_label(&self) -> &'static str {
+        match self {
+            ArchiveState::NexusDownloader { .. } => "Nexus",
+            ArchiveState::HttpDownloader { .. } => "HTTP",
+            ArchiveState::WabbajackCDNDownloader { .. } => "CDN",
+            ArchiveState::ManualDownloader { .. } => "Manual",
+            ArchiveState::MegaDownloader { .. } => "MEGA",
+            ArchiveState::GoogleDriveDownloader { .. } => "GDrive",
+            ArchiveState::MediaFireDownloader { .. } => "MediaFire",
+            ArchiveState::LoversLabOAuthDownloader { .. } => "LoversLab",
+            ArchiveState::GameFileSourceDownloader { .. } => "Game",
+            ArchiveState::UnknownDownloader => "Unknown",
+        }
+    }
+
+    /// CSS class suffix used to colour the source chip (e.g. `nexus` -> `.source-chip.nexus`).
+    pub fn source_chip_class(&self) -> &'static str {
+        match self {
+            ArchiveState::NexusDownloader { .. } => "nexus",
+            ArchiveState::HttpDownloader { .. } => "http",
+            ArchiveState::WabbajackCDNDownloader { .. } => "cdn",
+            ArchiveState::ManualDownloader { .. } => "manual",
+            ArchiveState::MegaDownloader { .. } => "mega",
+            ArchiveState::GoogleDriveDownloader { .. } => "gdrive",
+            ArchiveState::MediaFireDownloader { .. } => "mediafire",
+            ArchiveState::LoversLabOAuthDownloader { .. } => "loverslab",
+            ArchiveState::GameFileSourceDownloader { .. } => "game",
+            ArchiveState::UnknownDownloader => "unknown",
+        }
+    }
+
     pub fn name(&self) -> Option<String> {
         match self {
             ArchiveState::NexusDownloader { name, .. } => Some(name.clone()),
