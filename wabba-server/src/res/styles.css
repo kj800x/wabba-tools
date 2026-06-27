@@ -69,7 +69,6 @@
 
   .modlist-table {
     width: 100%;
-    max-width: 100%;
     border-collapse: collapse;
     background-color: white;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -86,93 +85,10 @@
       padding: 0.75rem 1rem;
       text-align: left;
       font-weight: 600;
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      word-wrap: break-word;
-      overflow-wrap: break-word;
-
-      &:nth-child(1) {
-        width: 18%;
-      }
-
-      /* Name */
-      &:nth-child(2) {
-        width: 8%;
-      }
-
-      /* Version */
-      &:nth-child(3) {
-        width: 18%;
-      }
-
-      /* Filename */
-      &:nth-child(4) {
-        width: 8%;
-      }
-
-      /* Size */
-      &:nth-child(5) {
-        width: 15%;
-      }
-
-      /* Hash */
-      &:nth-child(6) {
-        width: 8%;
-      }
-
-      /* Mods total */
-      &:nth-child(7) {
-        width: 8%;
-      }
-
-      /* Mods available */
-      &:nth-child(8) {
-        width: 17%;
-      }
-
-      /* Status */
-    }
-
-    /* Mods table variant - 7 columns: Filename, Name, Version, Size, Hash, Modlists, Status */
-    &.mods-table {
-      th {
-        &:nth-child(1) {
-          width: 20%;
-        }
-
-        /* Filename */
-        &:nth-child(2) {
-          width: 25%;
-        }
-
-        /* Name */
-        &:nth-child(3) {
-          width: 10%;
-        }
-
-        /* Version */
-        &:nth-child(4) {
-          width: 10%;
-        }
-
-        /* Size */
-        &:nth-child(5) {
-          width: 18%;
-        }
-
-        /* Hash */
-        &:nth-child(6) {
-          width: 7%;
-        }
-
-        /* Modlists */
-        &:nth-child(7) {
-          width: 10%;
-        }
-
-        /* Status */
-      }
+      white-space: nowrap;
     }
 
     tbody tr {
@@ -216,39 +132,16 @@
     }
 
     td {
-      padding: 0.75rem 1rem;
+      padding: 0.6rem 1rem;
       vertical-align: middle;
-      word-wrap: break-word;
-      overflow-wrap: break-word;
-      word-break: break-word;
-      overflow: hidden;
       font-size: 0.9rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
 
-      &.name a {
-        color: #3498db;
-        text-decoration: none;
-        font-weight: 500;
-        transition: color 0.2s;
-
-        &:hover {
-          color: #2980b9;
-          text-decoration: underline;
-        }
-      }
-
-      &.filename {
-        font-family: 'Courier New', monospace;
-        font-size: 0.9rem;
-        color: #666;
-      }
-
-      &.hash code {
-        font-family: 'Courier New', monospace;
-        font-size: 0.85rem;
-        color: #666;
-        background-color: #f5f5f5;
-        padding: 0.2rem 0.4rem;
-        border-radius: 3px;
+      &.version {
+        white-space: normal;
+        word-break: break-word;
       }
 
       &.status {
@@ -259,12 +152,12 @@
 
   .status-badge {
     display: inline-block;
-    padding: 0.4rem 0.8rem;
+    padding: 0.3rem 0.6rem;
     border-radius: 4px;
-    font-size: 0.85rem;
-    font-weight: 500;
+    font-size: 0.75rem;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
 
     &.available {
       background-color: #d4edda;
@@ -623,7 +516,6 @@
 
   .mod-table {
     width: 100%;
-    max-width: 100%;
     border-collapse: collapse;
     background-color: white;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -637,105 +529,13 @@
     }
 
     th {
-      padding: 1rem;
+      padding: 0.85rem 1rem;
       text-align: left;
       font-weight: 600;
-      font-size: 0.9rem;
+      font-size: 0.8rem;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      word-wrap: break-word;
-      overflow-wrap: break-word;
-
-      &:nth-child(1) {
-        width: 18%;
-      }
-
-      /* Filename */
-      &:nth-child(2) {
-        width: 23%;
-      }
-
-      /* Name */
-      &:nth-child(3) {
-        width: 10%;
-      }
-
-      /* Version */
-      &:nth-child(4) {
-        width: 10%;
-      }
-
-      /* Size */
-      &:nth-child(5) {
-        width: 23%;
-      }
-
-      /* Hash */
-      &:nth-child(6) {
-        width: 16%;
-      }
-
-      /* Status */
-    }
-
-    &.mod-table-with-id {
-      th {
-        &:nth-child(1) {
-          width: 8%;
-        }
-
-        /* ID */
-        &:nth-child(2) {
-          width: 16%;
-        }
-
-        /* Filename */
-        &:nth-child(3) {
-          width: 20%;
-        }
-
-        /* Name */
-        &:nth-child(4) {
-          width: 9%;
-        }
-
-        /* Version */
-        &:nth-child(5) {
-          width: 9%;
-        }
-
-        /* Size */
-        &:nth-child(6) {
-          width: 22%;
-        }
-
-        /* Hash */
-        &:nth-child(7) {
-          width: 16%;
-        }
-
-        /* Status */
-      }
-
-      td {
-        &.id {
-          font-family: 'Courier New', monospace;
-          font-size: 0.85rem;
-          color: #666;
-        }
-
-        &.name a {
-          color: #3498db;
-          text-decoration: none;
-          font-weight: 500;
-          transition: color 0.2s;
-
-          &:hover {
-            color: #2980b9;
-            text-decoration: underline;
-          }
-        }
-      }
+      white-space: nowrap;
     }
 
     tbody tr {
@@ -779,32 +579,27 @@
     }
 
     td {
-      padding: 1rem;
+      padding: 0.6rem 1rem;
       vertical-align: middle;
-      word-wrap: break-word;
-      overflow-wrap: break-word;
-      word-break: break-word;
+      font-size: 0.9rem;
+      white-space: nowrap;
       overflow: hidden;
+      text-overflow: ellipsis;
 
-      &.filename {
-        font-family: 'Courier New', monospace;
-        font-size: 0.9rem;
-        color: #666;
-      }
-
-      &.name em,
-      &.version em {
-        color: #999;
-        font-style: italic;
-      }
-
-      &.hash code {
+      &.id {
         font-family: 'Courier New', monospace;
         font-size: 0.85rem;
         color: #666;
-        background-color: #f5f5f5;
-        padding: 0.2rem 0.4rem;
-        border-radius: 3px;
+      }
+
+      &.version {
+        white-space: normal;
+        word-break: break-word;
+
+        em {
+          color: #999;
+          font-style: italic;
+        }
       }
 
       &.status {
@@ -815,12 +610,12 @@
 
   .status-badge {
     display: inline-block;
-    padding: 0.4rem 0.8rem;
+    padding: 0.3rem 0.6rem;
     border-radius: 4px;
-    font-size: 0.85rem;
-    font-weight: 500;
+    font-size: 0.75rem;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
 
     &.available {
       background-color: #d4edda;
@@ -837,4 +632,124 @@
       color: #721c24;
     }
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Shared table components (identity cell, source chips, copyable hash).
+   Placed at the top level so they apply on both listing and details pages,
+   and after the table rules so `td.identity` wins the cascade.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Column widths for `table-layout: fixed`. The width-less `.col-mod` column
+   soaks up whatever is left, so the identity column is always the widest. */
+.col-mod { /* no width: absorbs remaining space */ }
+.col-id { width: 5.5rem; }
+.col-version { width: 7rem; }
+.col-size { width: 6.5rem; }
+.col-hash { width: 9.5rem; }
+.col-count { width: 7.5rem; }
+.col-status { width: 9.5rem; }
+
+/* Identity cell: bold name + chip on top, muted filename underneath.
+   Selector is body-class-qualified to outrank the nested `.page-* table td`
+   `white-space: nowrap` rule so long names wrap instead of clipping. */
+.page-listing .modlist-table td.identity,
+.page-details .mod-table td.identity {
+  white-space: normal;
+  vertical-align: middle;
+}
+
+.identity-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Inline flow so long names wrap naturally and the chip trails the last word. */
+.identity-primary {
+  line-height: 1.4;
+}
+
+.identity-name {
+  color: #2c3e50;
+  font-weight: 600;
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+
+.identity-link:hover .identity-name {
+  color: #2980b9;
+  text-decoration: underline;
+}
+
+.identity-sub {
+  display: block;
+  margin-top: 0.15rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.78rem;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Source chips. Categorical palette — green/amber/red are reserved for status. */
+.source-chip {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  vertical-align: 1px;
+  background-color: #f1f5f9;
+  color: #475569;
+}
+
+.source-chip.nexus     { background-color: #e0e7ff; color: #3730a3; }
+.source-chip.manual    { background-color: #e2e8f0; color: #334155; }
+.source-chip.http      { background-color: #ccfbf1; color: #115e59; }
+.source-chip.cdn       { background-color: #ede9fe; color: #5b21b6; }
+.source-chip.gdrive    { background-color: #cffafe; color: #155e75; }
+.source-chip.game      { background-color: #f3e3d0; color: #7c4a1e; }
+.source-chip.mega      { background-color: #ffedd5; color: #9a3412; }
+.source-chip.mediafire { background-color: #fce7f3; color: #9d174d; }
+.source-chip.loverslab { background-color: #f5e1ff; color: #7e22ce; }
+.source-chip.unknown   { background-color: #f1f5f9; color: #64748b; }
+
+/* Copyable hash cell — click to copy the full hash (e.g. for `prune --keep`). */
+.hash-copy {
+  border: none;
+  background: none;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.hash-copy code {
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: #555;
+  background-color: #f5f5f5;
+  padding: 0.2rem 0.45rem;
+  border-radius: 3px;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.hash-copy:hover code {
+  background-color: #e5edff;
+  color: #1d4ed8;
+}
+
+.hash-copy.copied code,
+.hash-copy.copied:hover code {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.hash-copy.copied code::after {
+  content: " ✓";
 }
